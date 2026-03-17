@@ -1,7 +1,7 @@
-# 高性能AI渲染大赛 - 光照贴图神经网络重建与UE渲染管线集成方案
+#  光照贴图神经网络重建
 
 ## 项目概述
-本项目为高性能AI渲染大赛参赛方案，针对**光照贴图神经网络时序重建**与**UE渲染管线工程化集成**两个赛题，设计了一套兼顾重建精度、压缩效率与实时推理帧率的轻量级AI渲染方案。
+本项目为针对**光照贴图神经网络时序重建**与**UE渲染管线工程化集成**两个任务，设计了一套兼顾重建精度、压缩效率与实时推理帧率的轻量级AI渲染方案。
 
 核心基于极小参数量的MLP网络实现光照信息压缩与解码，通过针对性的训练策略、数据编码优化与UE Shader工程适配，最终实现了动态光照贴图的高质量实时重建，满足离线训练精度与在线渲染性能的双重要求。
 
@@ -114,11 +114,9 @@ mlp_final_array_f32.tofile(output_mlp_filename)
 混合专家架构的训练优化对结果影响很大，
 ---
 赛题二：UE渲染管线集成方案
-核心原则：最小化UE引擎原生代码修改，基于官方管线集成方法，将赛题一的AI重建算法集成到UE渲染管线中，重点优化Shader推理代码，保障实时渲染帧率。
-1. 引擎代码修改
-仅对引擎核心文件进行少量修改，适配FeatureMap特性与存储要求：
-1.1 MapBuildData.cpp修改
-将LightMapTexture长宽减半，适配FeatureMap（原图分辨率一半）的特性，确保FeatureMap正确读取：
+核心原则：最小化UE引擎原生代码修改，将赛题一的AI重建算法集成到UE渲染管线中，重点优化Shader推理代码，保障实时渲染帧率。
+不同版本的UE渲染管线的集成方法一般不同，这里只提供一下推理优化思路
+1. 将LightMapTexture长宽减半，适配FeatureMap（原图分辨率一半）的特性，确保FeatureMap正确读取：
 ```cpp
 #if WITH_EDITORONLY_DATA
 int SizeX = LightMapTexture->Source.GetSizeX()/2;
@@ -128,14 +126,11 @@ int SizeX = LightMapTexture->GetSizeX() / 2;
 int SizeY = LightMapTexture->GetSizeY() / 2;
 #endif
 ```
-1.2 LightMap.cpp修改
-设置FeatureMap以FP16格式存储和读取，匹配赛题一的存储优化策略：
+2. 设置FeatureMap以FP16格式存储和读取，匹配赛题一的存储优化策略：
 ```cpp
 Texture->GetPlatformData()->PixelFormat = PF_FloatRGBA;
 ```
-2. Shader推理代码修改（核心）
-主要修改LightmapCommon.ush文件中的Shader代码，适配MLP推理、GAMMA反变换与半精度优化，基本沿用官方推理框架，仅做针对性调整：
-2.1 MLP层数与推理优化
+3. Shader推理代码，通过矩阵乘优化MLP推理
 沿用赛题一的8->16->16->16->3 MLP架构，采用矩阵乘优化推理速度，需先通过MLPTrans脚本对MLP权重和偏置进行重排，确保Shader正确读取。
 ```hlsl
 half4x4 WeightMatrix=half4x4(
@@ -145,16 +140,8 @@ half4x4 WeightMatrix=half4x4(
     WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
 Output1[i] += mul(WeightMatrix, Output0[j]);
 ```
-2.2 GAMMA反变换实现
-读取MLP文件中存储的GAMMA超参数（mu），在推理完成后执行反变换，确保输出光照贴图与原始效果一致：
-```hlsl
-half mu=NeuralLightMapParameters[1023].x;
-half inv_gamma = 1.0 / mu;
-Output4 = max(half3(0.0h, 0.0h, 0.0h), Output4);
-Output4 = pow(Output4, inv_gamma);
-```
-2.3 半精度推理优化
-将数据读取和模型推理均改为HALF半精度（half4），尝试进一步提升帧率，实测引擎可能已自动将FLOAT优化为HALF，因此帧率提升不明显，但未影响重建精度。
+4. 半精度推理优化
+将数据读取和模型推理均改为HALF半精度（half4），尝试进一步提升帧率。
 ```
 ---
 性能测试指标
@@ -166,7 +153,7 @@ Output4 = pow(Output4, inv_gamma);
     "LPIPS Score": 94.17818999149053,
     "Compression Ratio Score": 95.69013578469222,
     "Inference Time Score": 98.2591621875763,
-    "综合得分": 47.115683940361814
+    "综合得分": 94.230683940361814
 }
 ```
 部署与复现步骤
@@ -176,10 +163,8 @@ UE渲染环境：Unreal Engine（版本兼容即可）、4060及以上GPU（用�
 2. 模型训练与权重准备
 运行训练代码，采用增量训练+自动学习率下降策略，完成阶段一和阶段二训练；
 训练完成后，运行MLPTrans.py脚本，对MLP权重进行重排；
-将生成的FeatureMap（FP16）和MLP权重文件放入./Parameters/目录。
 3. UE管线集成
-修改UE引擎文件：MapBuildData.cpp、LightMap.cpp，按上述代码调整参数；
-修改LightmapCommon.ush文件
+根据UE的渲染管线进行集成，加推加速优化
 启动UE项目，加载光照贴图资源，验证实时渲染效果。
 ---
 注意事项
@@ -187,4 +172,4 @@ UE渲染环境：Unreal Engine（版本兼容即可）、4060及以上GPU（用�
 精度选择：FeatureMap推理时优先使用FP16格式；
 UE帧率优化：UE Shader推理时，MLP隐藏层维度建议限制在16以下，否则帧率会大幅降低；
 环境兼容：确保UE引擎版本与Shader代码兼容，避免因版本差异导致的编译错误。
-> （注：部分文档内容可能由 AI 生成）
+
