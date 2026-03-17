@@ -32,6 +32,7 @@
 3. 验证算法在实际渲染管线中的落地效果，实现动态光照的实时渲染
 ---
 问题一：光照贴图神经网络重建方案
+
 本算法经过了10轮以上的迭代，面向轻量级MLP网络方案感觉已经迭代到极致，想要有更好的效果可能得从其他角度进行入手，比如基于机器学习的方案等
 1. 核心网络架构
 为兼顾推理速度与重建精度，采用轻量级MLP网络架构，整体结构为8->16->16->16->3，网络架构可以针对不同的光照贴图格式和重建质量、压缩率与推理速度比值进行定制，总体来说网络大了重建质量会提升，然后推理速度会下降。激活函数选用GeLU，有效平衡模型表达能力与计算开销，适配后续UE Shader实时推理需求。
@@ -51,43 +52,48 @@ class MLPStack(nn.Module):
 self.featuremap = nn.Parameter(torch.empty((1, 4, feature_width, feature_height), dtype=self.MODEL_DTYPE, device=device))
 ```
 3. 输入输出编码设计
-3.1 输入参数设计
-模型输入维度共计8维，具体包括：图像Y坐标、X坐标、时间坐标T、FeatureMap的4个通道值（r、g、b、a），以及1位时间编码e^t-1。
-关键优化说明：
-时间编码：仅使用1位e^t-1编码时，实测效果优于SIN、COS类NeRF时间编码；若硬件资源充足，采用长段NeRF时间编码可进一步提升性能，但高频NeRF编码易过拟合到24个训练时刻，导致中间时刻推理精度下降。
-位置编码：经大量实验验证，位置编码对重建效果提升不明显，且会增加计算开销，因此未引入位置编码。
-输入汇总：(Y, X, T, Featuremap.r, Featuremap.g, Featuremap.b, Featuremap.a, E^T-1)
-3.2 输出参数设计
-模型输出为光照贴图的RGB值GAMMA变换结果，而非原始RGB数据，通过GAMMA变换可有效提升模型训练稳定性与重建精度。
-4. 训练策略设计
-4.1 训练方法
-采用增量训练+自动学习率下降策略，兼顾训练效果与效率：
-增量训练：先训练第一层网络，训练过程中固定第二层梯度，实测可使模型收敛到更优解，提升重建精度。
-自动学习率下降：初始学习率设为3E-5，当损失函数（LOSS）持续迭代无下降时，自动按0.9的比例降低学习率，避免因不同图像差异频繁手动调整学习率，提升训练通用性。
-4.2 损失函数
-选用L1Loss作为损失函数，有效降低重建图像与原始图像的像素级误差，适合光照贴图这类连续值图像的重建任务，定义如下：
-```python
-criterion = nn.L1Loss()
-```
-4.3 GAMMA变换实现
-训练时对原始RGB数据进行GAMMA变换，推理时执行反变换，确保输出结果与原始光照贴图一致。GAMMA超参数通过快速搜索确定，候选值范围为[0.05, 1.1]，通过少量迭代训练筛选最优值。
-```python
-def gamma_transform_fixed(x: torch.Tensor, mu_param: FixedMu) -> torch.Tensor:
-    current_gamma = mu_param.mu
-    if torch.isclose(current_gamma, torch.tensor(1.0).to(current_gamma.device)):
-        return x
-    else:
-        return torch.pow(x.clamp(min=0.0), current_gamma)
+   
+    3.1 输入参数设计
+    模型输入维度共计8维，具体包括：图像Y坐标、X坐标、时间坐标T、FeatureMap的4个通道值（r、g、b、a），以及1位时间编码e^t-1。
+    关键优化说明：
+    时间编码：仅使用1位e^t-1编码时，实测效果优于SIN、COS类NeRF时间编码；若硬件资源充足，采用长段NeRF时间编码可进一步提升性能，但高频NeRF编码易过拟合到24个训练时刻，导致中间时刻推理精度下降。
+    位置编码：经大量实验验证，位置编码对重建效果提升不明显，且会增加计算开销，因此未引入位置编码。
+    输入汇总：(Y, X, T, Featuremap.r, Featuremap.g, Featuremap.b, Featuremap.a, E^T-1)
 
-# 推理时反变换
-def inverse_gamma_transform_fixed(x_gamma: torch.Tensor, mu_param: FixedMu) -> torch.Tensor:
-    current_gamma = mu_param.mu
-    if torch.isclose(current_gamma, torch.tensor(1.0).to(current_gamma.device)):
-        return x_gamma
-    else:
-        inv_gamma = 1.0 / current_gamma
-        return torch.pow(x_gamma.clamp(min=0.0), inv_gamma)
-```
+    3.2 输出参数设计
+    模型输出为光照贴图的RGB值GAMMA变换结果，而非原始RGB数据，通过GAMMA变换可有效提升模型训练稳定性与重建精度。
+
+4. 训练策略设计
+   
+    4.1 训练方法
+    采用增量训练+自动学习率下降策略，兼顾训练效果与效率：
+    增量训练：先训练第一层网络，训练过程中固定第二层梯度，实测可使模型收敛到更优解，提升重建精度。
+    自动学习率下降：初始学习率设为3E-5，当损失函数（LOSS）持续迭代无下降时，自动按0.9的比例降低学习率，避免因不同图像差异频繁手动调整学习率，提升训练通用性。
+
+    4.2 损失函数
+    选用L1Loss作为损失函数，有效降低重建图像与原始图像的像素级误差，适合光照贴图这类连续值图像的重建任务，定义如下：
+    ```python
+    criterion = nn.L1Loss()
+    ```
+    4.3 GAMMA变换实现
+    训练时对原始RGB数据进行GAMMA变换，推理时执行反变换，确保输出结果与原始光照贴图一致。GAMMA超参数通过快速搜索确定，候选值范围为[0.05, 1.1]，通过少量迭代训练筛选最优值。
+    ```python
+    def gamma_transform_fixed(x: torch.Tensor, mu_param: FixedMu) -> torch.Tensor:
+        current_gamma = mu_param.mu
+        if torch.isclose(current_gamma, torch.tensor(1.0).to(current_gamma.device)):
+            return x
+        else:
+            return torch.pow(x.clamp(min=0.0), current_gamma)
+    
+    # 推理时反变换
+    def inverse_gamma_transform_fixed(x_gamma: torch.Tensor, mu_param: FixedMu) -> torch.Tensor:
+        current_gamma = mu_param.mu
+        if torch.isclose(current_gamma, torch.tensor(1.0).to(current_gamma.device)):
+            return x_gamma
+        else:
+            inv_gamma = 1.0 / current_gamma
+            return torch.pow(x_gamma.clamp(min=0.0), inv_gamma)
+    ```
 5. 模型存储优化
 为平衡存储开销与重建精度，采用差异化存储策略：
 MLP权重采用FP32存储，确保推理精度；
@@ -113,7 +119,7 @@ mlp_final_array_f32.tofile(output_mlp_filename)
 阶段二采用与阶段一相同的8->16->16->16->3模型架构，仅训练MLP权重和偏置，固定FeatureMap参数。
 混合专家架构的训练优化对结果影响很大，
 ---
-赛题二：UE渲染管线集成方案
+任务二：UE渲染管线集成方案
 核心原则：最小化UE引擎原生代码修改，将赛题一的AI重建算法集成到UE渲染管线中，重点优化Shader推理代码，保障实时渲染帧率。
 不同版本的UE渲染管线的集成方法一般不同，这里只提供一下推理优化思路
 1. 将LightMapTexture长宽减半，适配FeatureMap（原图分辨率一半）的特性，确保FeatureMap正确读取：
