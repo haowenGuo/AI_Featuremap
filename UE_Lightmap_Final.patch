@@ -1,0 +1,1983 @@
+From 32f7bc273011736af1ca8cdd9a41a1b81f747366 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E9=83=AD=E6=B5=A9=E6=96=87?=
+ <13488293+haowenGuo@user.noreply.gitee.com>
+Date: Tue, 16 Dec 2025 14:04:02 +0800
+Subject: [PATCH] final
+
+---
+ Engine/Shaders/Private/LightmapCommon.ush     | 192 +++++--
+ .../Runtime/Engine/Private/LightMap.cpp       | 473 +++++++++---------
+ .../Runtime/Engine/Private/MapBuildData.cpp   | 119 ++---
+ 3 files changed, 435 insertions(+), 349 deletions(-)
+
+diff --git a/Engine/Shaders/Private/LightmapCommon.ush b/Engine/Shaders/Private/LightmapCommon.ush
+index 109eb3824..23a4c8edc 100644
+--- a/Engine/Shaders/Private/LightmapCommon.ush
++++ b/Engine/Shaders/Private/LightmapCommon.ush
+@@ -105,24 +105,24 @@ void GetLightMapColorLQ( VTPageTableResult LightmapVTPageTableResult, LightmapUV
+ 	// Sample SH with normal
+ 	half Directionality = max( 0.0, dot( SH, float4(WorldNormal.yzx, 1) ) );	// 1 dot, 1 smax
+ 
+-#if SHADINGMODEL_REQUIRES_BACKFACE_LIGHTING
++	#if SHADINGMODEL_REQUIRES_BACKFACE_LIGHTING
+ 	if (bEvaluateBackface)
+ 	{
+ 		half SubsurfaceDirectionality = max(0.0, dot(SH, float4(-WorldNormal.yzx, 1)));
+ 		half SubsurfaceLuma = L * SubsurfaceDirectionality;
+ 		OutSubsurfaceLighting = LogRGB * (SubsurfaceLuma / LogL);
+ 	}
+-#endif
++	#endif
+ #else
+ 	half Directionality = 0.6;
+ 
+-#if SHADINGMODEL_REQUIRES_BACKFACE_LIGHTING
++	#if SHADINGMODEL_REQUIRES_BACKFACE_LIGHTING
+ 	if (bEvaluateBackface)
+ 	{
+ 		half SubsurfaceLuma = L * Directionality;
+ 		OutSubsurfaceLighting = LogRGB * (SubsurfaceLuma / LogL);
+ 	}
+-#endif
++	#endif
+ #endif
+ 		
+ 	half Luma = L * Directionality;
+@@ -167,30 +167,30 @@ void GetLightMapColorHQ( VTPageTableResult LightmapVTPageTableResult, LightmapUV
+ 	// Sample SH with normal
+ 	half Directionality = max( 0.0, dot( SH, float4(WorldNormal.yzx, 1) ) );
+ 
+-#if SHADINGMODEL_REQUIRES_BACKFACE_LIGHTING
++	#if SHADINGMODEL_REQUIRES_BACKFACE_LIGHTING
+ 	if (bEvaluateBackface)
+ 	{
+ 		half SubsurfaceDirectionality = max(0.0, dot(SH, float4(-WorldNormal.yzx, 1)));
+ 		OutSubsurfaceLighting = L * SubsurfaceDirectionality * UVW;
+ 	}
+-#endif
++	#endif
+ #else
+ 	half Directionality = 0.6;
+ 
+-#if SHADINGMODEL_REQUIRES_BACKFACE_LIGHTING
++	#if SHADINGMODEL_REQUIRES_BACKFACE_LIGHTING
+ 	if (bEvaluateBackface)
+ 	{
+ 		OutSubsurfaceLighting = L * Directionality * UVW;
+ 	}
+-#endif
++	#endif
+ #endif
+ 
+ #if USE_NEURAL_LIGHTMAP
+-    /** HPRC Example Start */
++    /* HPRC Example Start 
+ 	float4 Test[2];
+ 	Test[0] = Texture2DSample( LightmapResourceCluster.NeuralLightMapTexture, LightmapResourceCluster.NeuralLightMapSampler, LightmapUV0);
+ 	float4 NeuralLightMapParameters[1024] = GetLightmapData(LightmapDataIndex).NeuralLightMapParameters;
+-	Test[1] = float4(LightmapUV0.y * 2.0, LightmapUV0.x, 0.5 / 24, 0.0);
++	Test[1] = float4(LightmapUV0.y, LightmapUV0.x, View.TodCurrentTime, 0.0);
+ 
+     float4 Output1[4];
+     for (int i = 0; i < 4; i++)
+@@ -249,26 +249,7 @@ void GetLightMapColorHQ( VTPageTableResult LightmapVTPageTableResult, LightmapUV
+         Output3[i] = max(0.0, Output3[i]);
+     }
+ 
+-    float4 Output4[4];
+-	for (int i = 0; i < 4; i++)
+-    {
+-        Output4[i] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+-		for (int j = 0; j < 4; j++)
+-        {
+-            float4x4 WeightMatrix;
+-            int BaseIndex = (40 + i * 4 + j) * 4;
+-            WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0];
+-            WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1];
+-            WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2];
+-            WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3];
+-            
+-            Output4[i] += mul(WeightMatrix, Output3[j]);
+-        }
+-        Output4[i] += NeuralLightMapParameters[252 + i];
+-        Output4[i] = max(0.0, Output4[i]);
+-    }
+-
+-    float3 Output5 = float3(0.0f, 0.0f, 0.0f);
++    float3 Output4 = float3(0.0h, 0.0h, 0.0h);
+     for (int j = 0; j < 4; j++)
+     {
+         float4x4 WeightMatrix;
+@@ -278,11 +259,112 @@ void GetLightMapColorHQ( VTPageTableResult LightmapVTPageTableResult, LightmapUV
+         WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2];
+         WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3];
+         
+-         Output5 += mul(WeightMatrix, Output4[j]).xyz;
++         Output4 += mul(WeightMatrix, Output3[j]).xyz;
++    }
++    Output4 += NeuralLightMapParameters[256].xyz;
++    Output4 =float4(1.0f, 0.5f, 0.1f, 0.0f);
++	OutDiffuseLighting = Output4 * Output4 * Directionality;
++
++*/
++	float2 grid=float2(LightmapUV0.x,LightmapUV0.y*2.0);
++	half4 feature= half4(Texture2DSample( LightmapResourceCluster.NeuralLightMapTexture, LightmapResourceCluster.NeuralLightMapSampler,grid));
++	half4 NeuralLightMapParameters[1024] = GetLightmapData(LightmapDataIndex).NeuralLightMapParameters;
++	half mu=NeuralLightMapParameters[1023].x;
++    half inv_gamma = 1.0 / mu;
++    
++
++	half time_coord = View.TodCurrentTime / 24.0h; 
++	// 3. 构造模型完整输入（总维度=3(input)+4(feature)1(时间编码)=8）
++	half4 Output0[2];
++	Output0[0]=half4(LightmapUV0.y*2.0,LightmapUV0.x, time_coord, feature.r);
++	Output0[1]=half4(feature.g,feature.b, feature.a, exp(time_coord) - 1.0h);
++
++	half4 Output1[4] ;  // 第一层隐藏层（16维）
++
++	#pragma unroll // 展开外层循环，消除循环开销
++    for (int i = 0; i < 4; i++)
++    {
++        Output1[i] = half4(0.0h, 0.0h, 0.0h, 0.0h);
++
++		#pragma unroll // 展开外层循环，消除循环开销
++		for (int j = 0; j < 2; j++)
++		{
++			int BaseIndex = (i * 2 + j) * 4;
++
++			half4x4 WeightMatrix=half4x4(			
++			WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0],
++			WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1],
++			WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2],
++			WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
++
++			Output1[i] += mul(WeightMatrix, Output0[j]);
++
++		}
++		Output1[i] += NeuralLightMapParameters[176 + i];
++        Output1[i] = (Output1[i] / (1.0h + exp(-1.702h * Output1[i])));
++    }
++	half4 Output2[4] ;
++	#pragma unroll // 展开外层循环，消除循环开销
++    for (int i = 0; i < 4; i++)
++    {
++		Output2[i] = half4(0.0h, 0.0h, 0.0h, 0.0h);
++		#pragma unroll // 展开外层循环，消除循环开销
++		for (int j = 0; j < 4; j++)
++		{
++			int BaseIndex = (8+i * 4 + j) * 4;
++			half4x4 WeightMatrix=half4x4(			
++			WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0],
++			WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1],
++			WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2],
++			WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
++        
++			Output2[i] += mul(WeightMatrix, Output1[j]);
++		}
++		Output2[i] += NeuralLightMapParameters[180 + i];
++        Output2[i] = (Output2[i] / (1.0h + exp(-1.702h * Output2[i])));
+     }
+-    Output5 += NeuralLightMapParameters[256].xyz;
+ 
+-	OutDiffuseLighting = Output5 * Output5 * Directionality;
++	#pragma unroll // 展开外层循环，消除循环开销
++    for (int i = 0; i <4; i++)
++    {
++		Output1[i] = half4(0.0h, 0.0h, 0.0h, 0.0h);
++		#pragma unroll // 展开外层循环，消除循环开销
++		for (int j = 0; j < 4; j++)
++		{
++			int BaseIndex = (24+i * 4 + j) * 4;
++			half4x4 WeightMatrix=half4x4(			
++			WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0],
++			WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1],
++			WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2],
++			WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
++        
++			Output1[i] += mul(WeightMatrix, Output2[j]);
++		}
++		Output1[i] += NeuralLightMapParameters[184 + i];
++        Output1[i] = (Output1[i] / (1.0h + exp(-1.702h * Output1[i])));
++    }
++
++	half3 Output4 = half3(0.0h, 0.0h, 0.0h);
++	#pragma unroll
++	for (int j = 0; j < 4; j++)
++	{
++		int BaseIndex = (40 + j) * 4; 
++		half4x4 WeightMatrix=half4x4(			
++		WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0],
++		WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1],
++		WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2],
++		WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
++		Output4.xyz += mul(WeightMatrix, Output1[j]).xyz;
++	}
++    Output4 += NeuralLightMapParameters[188].xyz;
++
++	Output4 = max(half3(0.0h, 0.0h, 0.0h), Output4);
++	Output4 = pow(Output4, inv_gamma);
++
++	OutDiffuseLighting = Output4 * Directionality;
++	
++/**/
++	//OutDiffuseLighting = Output5 * Output5 * Directionality;
+ 	/** HPRC Example End */
+ #else
+ 	half Luma = L * Directionality;
+@@ -338,7 +420,7 @@ float GetAOMaterialMask(VTPageTableResult LightmapVTPageTableResult, LightmapUVT
+ half4 GetPrecomputedShadowMasks(VTPageTableResult LightmapVTPageTableResult, FVertexFactoryInterpolantsVSToPS Interpolants, FMaterialPixelParameters MaterialParameters, float3 VolumetricLightmapBrickTextureUVs)
+ {
+ 	// Note: WRITES_PRECSHADOWFACTOR_ZERO have to match the logic here
+-#if STATICLIGHTING_TEXTUREMASK && STATICLIGHTING_SIGNEDDISTANCEFIELD
++	#if STATICLIGHTING_TEXTUREMASK && STATICLIGHTING_SIGNEDDISTANCEFIELD
+ 
+ 		// VT doesn't need ShadowMapCoordinate (instead shared lightmap UV), but still needs LightmapDataIndex
+ 		LightmapUVType ShadowMapCoordinate;
+@@ -347,11 +429,11 @@ half4 GetPrecomputedShadowMasks(VTPageTableResult LightmapVTPageTableResult, FVe
+ 
+ 		// Fetch the 4 channels of distance field data
+ 		half4 DistanceField;
+-#if LIGHTMAP_VT_ENABLED
++		#if LIGHTMAP_VT_ENABLED
+ 			DistanceField = SampleLightmapVT( LightmapVTPageTableResult, 2u, LightmapDataIndex, LightmapResourceCluster.VTStaticShadowTexture, LIGHTMAP_SHARED_SAMPLER(StaticShadowTextureSampler));
+-#else
++		#else
+ 			DistanceField = Texture2DSample(LightmapResourceCluster.StaticShadowTexture, LIGHTMAP_SHARED_SAMPLER(StaticShadowTextureSampler), ShadowMapCoordinate);
+-#endif
++		#endif
+ 
+ 		float4 InvUniformPenumbraSizes = GetLightmapData(LightmapDataIndex).InvUniformPenumbraSizes;
+ 		float4 DistanceFieldBias = -.5f * InvUniformPenumbraSizes + .5f;
+@@ -360,30 +442,30 @@ half4 GetPrecomputedShadowMasks(VTPageTableResult LightmapVTPageTableResult, FVe
+ 		half4 ShadowFactors = saturate(DistanceField * InvUniformPenumbraSizes + DistanceFieldBias);
+ 		return GetLightmapData(LightmapDataIndex).StaticShadowMapMasks * ShadowFactors * ShadowFactors;
+ 
+-#elif HQ_TEXTURE_LIGHTMAP || LQ_TEXTURE_LIGHTMAP
++	#elif HQ_TEXTURE_LIGHTMAP || LQ_TEXTURE_LIGHTMAP
+ 
+ 		// Mark as shadowed for lightmapped objects with no shadowmap
+ 		// This is necessary because objects inside a light's influence that were determined to be completely shadowed won't be rendered with STATICLIGHTING_TEXTUREMASK==1
+ 		return 0;
+ 
+-#elif ALLOW_STATIC_LIGHTING
++	#elif ALLOW_STATIC_LIGHTING
+ 
+ 		float DirectionalLightShadowing = 1.0f;
+ 
+-#if CACHED_POINT_INDIRECT_LIGHTING || CACHED_VOLUME_INDIRECT_LIGHTING
++	#if CACHED_POINT_INDIRECT_LIGHTING || CACHED_VOLUME_INDIRECT_LIGHTING
+ 		if ((GetPrimitiveData(MaterialParameters).Flags & PRIMITIVE_SCENE_DATA_FLAG_USE_SINGLE_SAMPLE_SHADOW_SL) != 0 && View.IndirectLightingCacheShowFlag > 0.0f)
+ 		{
+ 			DirectionalLightShadowing = IndirectLightingCache.DirectionalLightShadowing;
+ 		}
+-#endif
++	#endif
+ 
+ 		BRANCH
+ 		if ((GetPrimitiveData(MaterialParameters).Flags & PRIMITIVE_SCENE_DATA_FLAG_USE_VOLUMETRIC_LM_SHADOW_SL) != 0)
+ 		{
+-#if !PRECOMPUTED_IRRADIANCE_VOLUME_LIGHTING
++			#if !PRECOMPUTED_IRRADIANCE_VOLUME_LIGHTING
+ 				// Compute brick UVs if we haven't already
+ 				VolumetricLightmapBrickTextureUVs = ComputeVolumetricLightmapBrickTextureUVs(WSHackToFloat(GetWorldPosition(MaterialParameters)));
+-#endif
++			#endif
+ 
+ 			DirectionalLightShadowing = GetVolumetricLightmapDirectionalLightShadowing(VolumetricLightmapBrickTextureUVs);
+ 		}
+@@ -391,46 +473,46 @@ half4 GetPrecomputedShadowMasks(VTPageTableResult LightmapVTPageTableResult, FVe
+ 		// Directional light is always packed into the first static shadowmap channel, so output the per-primitive directional light shadowing there if requested
+ 		return half4(DirectionalLightShadowing, 1, 1, 1);
+ 
+-#else
++	#else
+ 
+-	return half4(1, 1, 1, 1);
++		return half4(1, 1, 1, 1);
+ 
+-#endif
++	#endif
+ }
+ 
+ // Used by mobile renderer only
+ half4 GetPrimaryPrecomputedShadowMask(VTPageTableResult LightmapVTPageTableResult, FVertexFactoryInterpolantsVSToPS Interpolants, FMaterialPixelParameters MaterialParameters)
+ {
+-#if STATICLIGHTING_TEXTUREMASK && STATICLIGHTING_SIGNEDDISTANCEFIELD
++	#if STATICLIGHTING_TEXTUREMASK && STATICLIGHTING_SIGNEDDISTANCEFIELD
+ 
+ 		LightmapUVType ShadowMapCoordinate;
+ 		uint LightmapDataIndex;
+ 		GetShadowMapCoordinate(Interpolants, ShadowMapCoordinate, LightmapDataIndex);
+ 
+ 		// Fetch the distance field data
+-#if LIGHTMAP_VT_ENABLED
++		#if LIGHTMAP_VT_ENABLED
+ 			half4 DistanceField = SampleLightmapVT(LightmapVTPageTableResult, 2u, LightmapDataIndex, LightmapResourceCluster.VTStaticShadowTexture, LightmapResourceCluster.StaticShadowTextureSampler);
+-#else
++		#else
+ 			half4 DistanceField = Texture2DSample(LightmapResourceCluster.StaticShadowTexture, LightmapResourceCluster.StaticShadowTextureSampler, ShadowMapCoordinate);
+-#endif
++		#endif
+ 		float4 InvUniformPenumbraSizes = GetLightmapData(LightmapDataIndex).InvUniformPenumbraSizes;
+ 		float4 DistanceFieldBias = -.5f * InvUniformPenumbraSizes + .5f;
+ 		// Compute shadow factors by scaling and biasing the distance
+ 		half4 ShadowFactor = saturate( DistanceField * InvUniformPenumbraSizes + DistanceFieldBias );
+ 		return GetLightmapData(LightmapDataIndex).StaticShadowMapMasks * ShadowFactor * ShadowFactor;
+-#elif HQ_TEXTURE_LIGHTMAP || LQ_TEXTURE_LIGHTMAP
++	#elif HQ_TEXTURE_LIGHTMAP || LQ_TEXTURE_LIGHTMAP
+ 		// Mark as shadowed for lightmapped objects with no shadowmap
+ 		// This is necessary because objects inside a light's influence that were determined to be completely shadowed won't be rendered with STATICLIGHTING_TEXTUREMASK==1
+ 		return 0.0f;
+-#else
+-#if CACHED_POINT_INDIRECT_LIGHTING || CACHED_VOLUME_INDIRECT_LIGHTING
++	#else
++		#if CACHED_POINT_INDIRECT_LIGHTING || CACHED_VOLUME_INDIRECT_LIGHTING
+ 			// output per-primitive directional light shadowing if requested
+ 			if ((GetPrimitiveData(MaterialParameters).Flags & PRIMITIVE_SCENE_DATA_FLAG_USE_SINGLE_SAMPLE_SHADOW_SL) != 0 && ResolvedView.IndirectLightingCacheShowFlag > 0.0f)
+ 			{
+ 				return half4(IndirectLightingCache.DirectionalLightShadowing, 1, 1, 1);
+ 			}
+-#endif
+-#endif
++		#endif
++	#endif
+ 
+ 	return 1.0f;
+ }
+diff --git a/Engine/Source/Runtime/Engine/Private/LightMap.cpp b/Engine/Source/Runtime/Engine/Private/LightMap.cpp
+index 0db3eff85..e07e56ded 100644
+--- a/Engine/Source/Runtime/Engine/Private/LightMap.cpp
++++ b/Engine/Source/Runtime/Engine/Private/LightMap.cpp
+@@ -60,36 +60,36 @@ ENGINE_API float GMaxLightmapRadius = 5000.0f;	//10000.0;	//2000.0f;
+ ELightingBuildQuality GLightingBuildQuality = Quality_Preview;
+ 
+ #if WITH_EDITOR
+-/** Information about the lightmap sample that is selected */
+-UNREALED_API extern FSelectedLightmapSample GCurrentSelectedLightmapSample;
++	/** Information about the lightmap sample that is selected */
++	UNREALED_API extern FSelectedLightmapSample GCurrentSelectedLightmapSample;
+ #endif
+ 
+ /** The color to set selected texels to */
+ ENGINE_API FColor GTexelSelectionColor(255, 50, 0);
+ 
+ #if WITH_EDITOR
+-// NOTE: We're only counting the top-level mip-map for the following variables.
+-/** Total number of texels allocated for all lightmap textures. */
+-ENGINE_API uint64 GNumLightmapTotalTexels = 0;
+-/** Total number of texels used if the texture was non-power-of-two. */
+-ENGINE_API uint64 GNumLightmapTotalTexelsNonPow2 = 0;
+-/** Number of lightmap textures generated. */
+-ENGINE_API int32 GNumLightmapTextures = 0;
+-/** Total number of mapped texels. */
+-ENGINE_API uint64 GNumLightmapMappedTexels = 0;
+-/** Total number of unmapped texels. */
+-ENGINE_API uint64 GNumLightmapUnmappedTexels = 0;
+-/** Whether to allow cropping of unmapped borders in lightmaps and shadowmaps. Controlled by BaseEngine.ini setting. */
+-ENGINE_API bool GAllowLightmapCropping = false;
+-/** Total lightmap texture memory size (in bytes), including GLightmapTotalStreamingSize. */
+-ENGINE_API uint64 GLightmapTotalSize = 0;
+-/** Total memory size for streaming lightmaps (in bytes). */
+-ENGINE_API uint64 GLightmapTotalStreamingSize = 0;
++	// NOTE: We're only counting the top-level mip-map for the following variables.
++	/** Total number of texels allocated for all lightmap textures. */
++	ENGINE_API uint64 GNumLightmapTotalTexels = 0;
++	/** Total number of texels used if the texture was non-power-of-two. */
++	ENGINE_API uint64 GNumLightmapTotalTexelsNonPow2 = 0;
++	/** Number of lightmap textures generated. */
++	ENGINE_API int32 GNumLightmapTextures = 0;
++	/** Total number of mapped texels. */
++	ENGINE_API uint64 GNumLightmapMappedTexels = 0;
++	/** Total number of unmapped texels. */
++	ENGINE_API uint64 GNumLightmapUnmappedTexels = 0;
++	/** Whether to allow cropping of unmapped borders in lightmaps and shadowmaps. Controlled by BaseEngine.ini setting. */
++	ENGINE_API bool GAllowLightmapCropping = false;
++	/** Total lightmap texture memory size (in bytes), including GLightmapTotalStreamingSize. */
++	ENGINE_API uint64 GLightmapTotalSize = 0;
++	/** Total memory size for streaming lightmaps (in bytes). */
++	ENGINE_API uint64 GLightmapTotalStreamingSize = 0;
+ #endif
+ 
+ static TAutoConsoleVariable<int32> CVarTexelDebugging(
+ 	TEXT("r.TexelDebugging"),
+-	0,
++	0,	
+ 	TEXT("Whether T + Left mouse click in the editor selects lightmap texels for debugging Lightmass.  Lightmass must be recompiled with ALLOW_LIGHTMAP_SAMPLE_DEBUGGING enabled for this to work."),
+ 	ECVF_Default);
+ 
+@@ -160,9 +160,9 @@ TAutoConsoleVariable<int32> CVarPRTLightmapMaxSize(
+ 
+ bool IsTexelDebuggingEnabled()
+ {
+-	// MagicDawn Plugin Begin, limitcai
++    // MagicDawn Plugin Begin, limitcai
+ 	return CVarTexelDebugging.GetValueOnAnyThread() != 0;
+-	// MagicDawn Plugin End, limitcai
++    // MagicDawn Plugin End, limitcai
+ }
+ 
+ #include "TextureLayout.h"
+@@ -202,31 +202,31 @@ void ULightMapTexture2D::Serialize(FArchive& Ar)
+ 
+ 	uint32 Flags = LightmapFlags;
+ 	Ar << Flags;
+-	LightmapFlags = ELightMapFlags(Flags);
++	LightmapFlags = ELightMapFlags( Flags );
+ }
+ 
+-/**
++/** 
+  * Returns a one line description of an object for viewing in the generic browser
+  */
+ FString ULightMapTexture2D::GetDesc()
+ {
+-	return FString::Printf(TEXT("Lightmap: %dx%d [%s]"), GetSizeX(), GetSizeY(), GPixelFormats[GetPixelFormat()].Name);
++	return FString::Printf( TEXT("Lightmap: %dx%d [%s]"), GetSizeX(), GetSizeY(), GPixelFormats[GetPixelFormat()].Name );
+ }
+ 
+ #if WITH_EDITOR
+ static void DumpLightmapSizeOnDisk()
+ {
+-	UE_LOG(LogLightMap, Log, TEXT("Lightmap size on disk"));
+-	UE_LOG(LogLightMap, Log, TEXT("Source (KB),Source is Compressed,Platform Data (KB),Lightmap"));
++	UE_LOG(LogLightMap,Log,TEXT("Lightmap size on disk"));
++	UE_LOG(LogLightMap,Log,TEXT("Source (KB),Source is Compressed,Platform Data (KB),Lightmap"));
+ 	for (TObjectIterator<ULightMapTexture2D> It; It; ++It)
+ 	{
+ 		ULightMapTexture2D* Lightmap = *It;
+-		UE_LOG(LogLightMap, Log, TEXT("%f,%d,%f,%s"),
++		UE_LOG(LogLightMap,Log,TEXT("%f,%d,%f,%s"),
+ 			Lightmap->Source.GetSizeOnDisk() / 1024.0f,
+ 			Lightmap->Source.IsSourceCompressed(),
+ 			Lightmap->CalcTextureMemorySizeEnum(TMC_AllMips) / 1024.0f,
+ 			*Lightmap->GetPathName()
+-		);
++			);
+ 	}
+ }
+ 
+@@ -234,7 +234,7 @@ static FAutoConsoleCommand CmdDumpLightmapSizeOnDisk(
+ 	TEXT("DumpLightmapSizeOnDisk"),
+ 	TEXT("Dumps the size of all loaded lightmaps on disk (source and platform data)"),
+ 	FConsoleCommandDelegate::CreateStatic(DumpLightmapSizeOnDisk)
+-);
++	);
+ #endif // #if WITH_EDITOR
+ 
+ /** Lightmap resolution scaling factors for debugging.  The defaults are to use the original resolution unchanged. */
+@@ -276,13 +276,13 @@ FStaticLightingMesh::FStaticLightingMesh(
+ 	const FBox& InBoundingBox,
+ 	const FGuid& InGuid,
+ 	const FGuid& InComponentGuid
+-) :
++	):
+ 	NumTriangles(InNumTriangles),
+ 	NumShadingTriangles(InNumShadingTriangles),
+ 	NumVertices(InNumVertices),
+ 	NumShadingVertices(InNumShadingVertices),
+ 	TextureCoordinateIndex(InTextureCoordinateIndex),
+-	bCastShadow(bInCastShadow&& InComponent->bCastStaticShadow),
++	bCastShadow(bInCastShadow && InComponent->bCastStaticShadow),
+ 	bTwoSidedMaterial(bInTwoSidedMaterial),
+ 	RelevantLights(InRelevantLights),
+ 	Component(InComponent),
+@@ -300,16 +300,16 @@ FStaticLightingMesh::FStaticLightingMesh(
+ 	}
+ }
+ 
+-FStaticLightingMesh::FStaticLightingMesh() :
++FStaticLightingMesh::FStaticLightingMesh() : 
+ 	NumTriangles(0),
+ 	NumShadingTriangles(0),
+ 	NumVertices(0),
+ 	NumShadingVertices(0),
+ 	TextureCoordinateIndex(0),
+ 	bCastShadow(0),
+-	bTwoSidedMaterial(0),
++	bTwoSidedMaterial(0),	
+ 	Component(0)
+-{
++{		
+ }
+ 
+ void FStaticLightingMesh::Serialize(FArchive& Ar)
+@@ -318,26 +318,24 @@ void FStaticLightingMesh::Serialize(FArchive& Ar)
+ 	Ar << Guid;
+ 	Ar << ComponentGuid;
+ 	Ar << RelevantLightsGuid;
+-	Ar << SourceMeshGuid;
++	Ar << SourceMeshGuid;	
+ }
+ 
+-FStaticLightingTextureMapping::FStaticLightingTextureMapping(FStaticLightingMesh* InMesh, UObject* InOwner, int32 InSizeX, int32 InSizeY, int32 InLightmapTextureCoordinateIndex, bool bInBilinearFilter) :
+-	FStaticLightingMapping(InMesh, InOwner),
++FStaticLightingTextureMapping::FStaticLightingTextureMapping(FStaticLightingMesh* InMesh,UObject* InOwner,int32 InSizeX,int32 InSizeY,int32 InLightmapTextureCoordinateIndex,bool bInBilinearFilter):
++	FStaticLightingMapping(InMesh,InOwner),
+ 	SizeX(AdjustTextureMappingSize(InSizeX)),
+ 	SizeY(AdjustTextureMappingSize(InSizeY)),
+ 	LightmapTextureCoordinateIndex(InLightmapTextureCoordinateIndex),
+ 	bBilinearFilter(bInBilinearFilter)
+-{
+-}
++{}
+ 
+ FStaticLightingGlobalVolumeMapping::FStaticLightingGlobalVolumeMapping(FStaticLightingMesh* InMesh, UObject* InOwner, int32 InSizeX, int32 InSizeY, int32 InLightmapTextureCoordinateIndex) :
+ 	FStaticLightingTextureMapping(InMesh, InOwner, InSizeX, InSizeY, InLightmapTextureCoordinateIndex)
+-{
+-}
++{}
+ 
+ #if WITH_EDITOR
+ void FStaticLightingMapping::Serialize(FArchive& Ar)
+-{
++{	
+ 	bool bIsInstancedMesh = Ar.IsLoading() ? false : Mesh->IsInstancedMesh();
+ 	Ar << bIsInstancedMesh;
+ 
+@@ -351,9 +349,9 @@ void FStaticLightingMapping::Serialize(FArchive& Ar)
+ 		else
+ 		{
+ 			Mesh = new FStaticMeshStaticLightingMesh();
+-		}
++		}		
+ 	}
+-
++				
+ 	Mesh->Serialize(Ar);
+ 
+ 	/** The object which owns the mapping. */
+@@ -653,7 +651,7 @@ FLightMapAllocation::FLightMapAllocation(FQuantizedLightmapData&& QuantizedData)
+ 	, bHasPrtHQTextures(QuantizedData.bHasPrtHQTextures)
+ #endif
+ 	// MagicDawn PRT_LM_HQ End, limitcai
+-	// MagicDawn PRT_LM_LQ Begin, limitcai
++    // MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+ 	, bHasPrtLQTextures(QuantizedData.bHasPrtLQTextures)
+ #endif
+@@ -667,11 +665,11 @@ FLightMapAllocation::FLightMapAllocation(FQuantizedLightmapData&& QuantizedData)
+ 	FMemory::Memcpy(Add, QuantizedData.Add, sizeof(Add));
+ 	// MagicDawn PRT_LM_HQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_HQ_ENABLE
+-	FMemory::Memcpy(PrtHQScale, QuantizedData.PrtHQScale, sizeof(PrtHQScale));
++    FMemory::Memcpy(PrtHQScale, QuantizedData.PrtHQScale, sizeof(PrtHQScale));
+ 	FMemory::Memcpy(PrtHQAdd, QuantizedData.PrtHQAdd, sizeof(PrtHQAdd));
+ #endif
+ 	// MagicDawn PRT_LM_HQ End, limitcai
+-	// MagicDawn PRT_LM_LQ Begin, limitcai
++    // MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+ 	FMemory::Memcpy(PrtLQScale, QuantizedData.PrtLQScale, sizeof(PrtLQScale));
+ 	FMemory::Memcpy(PrtLQAdd, QuantizedData.PrtLQAdd, sizeof(PrtLQAdd));
+@@ -756,7 +754,7 @@ bool FLightMapPendingTexture::IsAsyncCacheComplete() const
+ 	}
+ #endif
+ 	// MagicDawn PRT_LM_LQ End, limitcai
+-
++	
+ 	// Encode and compress the coefficient textures.
+ 	for (uint32 CoefficientIndex = 0; CoefficientIndex < NUM_STORED_LIGHTMAP_COEF; CoefficientIndex += 2)
+ 	{
+@@ -823,7 +821,7 @@ bool FLightMapPendingTexture::IsFinishedEncoding() const
+ 
+ void FLightMapPendingTexture::PostEncode()
+ {
+-	check(IsInGameThread());
++	check(IsInGameThread()); 
+ 	check(bIsFinishedEncoding);
+ 
+ 	if (bHasRunPostEncode)
+@@ -866,7 +864,7 @@ void FLightMapPendingTexture::PostEncode()
+ 	}
+ 
+ 
+-	if (SkyOcclusionTexture != nullptr)
++	if (SkyOcclusionTexture!=nullptr)
+ 	{
+ 		PostEncode(SkyOcclusionTexture);
+ 	}
+@@ -919,7 +917,7 @@ void FLightMapPendingTexture::PostEncode()
+ 		{
+ 			continue;
+ 		}
+-
++		
+ 		PostEncode(Texture);
+ 
+ 		GNumLightmapTotalTexels += Texture->Source.GetSizeX() * Texture->Source.GetSizeY();
+@@ -983,7 +981,7 @@ void FLightMapPendingTexture::FinishCachingTextures()
+ 		FinishCacheTexture(AOMaterialMaskTexture);
+ 	}
+ 
+-	// MagicDawn PRT_LM_HQ Begin, limitcai
++    // MagicDawn PRT_LM_HQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_HQ_ENABLE
+ 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(PrtHQTextures); Index++)
+ 	{
+@@ -995,7 +993,7 @@ void FLightMapPendingTexture::FinishCachingTextures()
+ #endif
+ 	// MagicDawn PRT_LM_HQ End, limitcai
+ 
+-
++	
+ 	// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+ 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(PrtLQTextures); Index++)
+@@ -1139,7 +1137,7 @@ ENGINE_API bool GVisualizeLightmapTextures = false;
+ 
+ static void GenerateLightmapMipsAndDilateColor(int32 NumMips, int32 TextureSizeX, int32 TextureSizeY, FColor TextureColor, FColor** MipData, int8** MipCoverageData)
+ {
+-	for (int32 MipIndex = 1; MipIndex < NumMips; MipIndex++)
++	for(int32 MipIndex = 1; MipIndex < NumMips; MipIndex++)
+ 	{
+ 		const int32 SourceMipSizeX = FMath::Max(1, TextureSizeX >> (MipIndex - 1));
+ 		const int32 SourceMipSizeY = FMath::Max(1, TextureSizeY >> (MipIndex - 1));
+@@ -1150,32 +1148,32 @@ static void GenerateLightmapMipsAndDilateColor(int32 NumMips, int32 TextureSizeX
+ 		FColor* NextMipData = MipData[MipIndex];
+ 		FColor* LastMipData = MipData[MipIndex - 1];
+ 
+-		int8* NextMipCoverageData = MipCoverageData[MipIndex];
+-		int8* LastMipCoverageData = MipCoverageData[MipIndex - 1];
++		int8* NextMipCoverageData = MipCoverageData[ MipIndex ];
++		int8* LastMipCoverageData = MipCoverageData[ MipIndex - 1 ];
+ 
+ 		const int32 MipFactorX = SourceMipSizeX / DestMipSizeX;
+ 		const int32 MipFactorY = SourceMipSizeY / DestMipSizeY;
+ 
+ 		//@todo - generate mips before encoding lightmaps!  
+ 		// Currently we are filtering in the encoded space, similar to generating mips of sRGB textures in sRGB space
+-		for (int32 Y = 0; Y < DestMipSizeY; Y++)
++		for(int32 Y = 0; Y < DestMipSizeY; Y++)
+ 		{
+-			for (int32 X = 0; X < DestMipSizeX; X++)
++			for(int32 X = 0; X < DestMipSizeX; X++)
+ 			{
+ 				FLinearColor AccumulatedColor = FLinearColor::Black;
+ 				uint32 Coverage = 0;
+ 
+ 				const uint32 MinSourceY = (Y + 0) * MipFactorY;
+ 				const uint32 MaxSourceY = (Y + 1) * MipFactorY;
+-				for (uint32 SourceY = MinSourceY; SourceY < MaxSourceY; SourceY++)
++				for(uint32 SourceY = MinSourceY; SourceY < MaxSourceY; SourceY++)
+ 				{
+ 					const uint32 MinSourceX = (X + 0) * MipFactorX;
+ 					const uint32 MaxSourceX = (X + 1) * MipFactorX;
+-					for (uint32 SourceX = MinSourceX; SourceX < MaxSourceX; SourceX++)
++					for(uint32 SourceX = MinSourceX; SourceX < MaxSourceX; SourceX++)
+ 					{
+ 						const FColor& SourceColor = LastMipData[SourceY * SourceMipSizeX + SourceX];
+-						int8 SourceCoverage = LastMipCoverageData[SourceY * SourceMipSizeX + SourceX];
+-						if (SourceCoverage)
++						int8 SourceCoverage = LastMipCoverageData[ SourceY * SourceMipSizeX + SourceX ];
++						if( SourceCoverage )
+ 						{
+ 							AccumulatedColor += SourceColor.ReinterpretAsLinear() * SourceCoverage;
+ 							Coverage += SourceCoverage;
+@@ -1184,19 +1182,19 @@ static void GenerateLightmapMipsAndDilateColor(int32 NumMips, int32 TextureSizeX
+ 				}
+ 				FColor& DestColor = NextMipData[Y * DestMipSizeX + X];
+ 				int8& DestCoverage = NextMipCoverageData[Y * DestMipSizeX + X];
+-				if (GVisualizeLightmapTextures)
++				if ( GVisualizeLightmapTextures )
+ 				{
+ 					DestColor = TextureColor;
+ 					DestCoverage = 127;
+ 				}
+-				else if (Coverage)
++				else if(Coverage)
+ 				{
+-					DestColor = (AccumulatedColor / Coverage).QuantizeRound();
++					DestColor = ( AccumulatedColor / Coverage ).QuantizeRound();
+ 					DestCoverage = Coverage / (MipFactorX * MipFactorY);
+ 				}
+ 				else
+ 				{
+-					DestColor = FColor(0, 0, 0);
++					DestColor = FColor(0,0,0);
+ 					DestCoverage = 0;
+ 				}
+ 			}
+@@ -1204,35 +1202,35 @@ static void GenerateLightmapMipsAndDilateColor(int32 NumMips, int32 TextureSizeX
+ 	}
+ 
+ 	// Expand texels which are mapped into adjacent texels which are not mapped to avoid artifacts when using texture filtering.
+-	for (int32 MipIndex = 0; MipIndex < NumMips; MipIndex++)
++	for(int32 MipIndex = 0; MipIndex < NumMips; MipIndex++)
+ 	{
+ 		FColor* MipLevelData = MipData[MipIndex];
+ 		int8* MipLevelCoverageData = MipCoverageData[MipIndex];
+ 
+-		uint32 MipSizeX = FMath::Max(1, TextureSizeX >> MipIndex);
+-		uint32 MipSizeY = FMath::Max(1, TextureSizeY >> MipIndex);
+-		for (uint32 DestY = 0; DestY < MipSizeY; DestY++)
++		uint32 MipSizeX = FMath::Max(1,TextureSizeX >> MipIndex);
++		uint32 MipSizeY = FMath::Max(1,TextureSizeY >> MipIndex);
++		for(uint32 DestY = 0;DestY < MipSizeY;DestY++)
+ 		{
+-			for (uint32 DestX = 0; DestX < MipSizeX; DestX++)
++			for(uint32 DestX = 0; DestX < MipSizeX; DestX++)
+ 			{
+ 				FColor& DestColor = MipLevelData[DestY * MipSizeX + DestX];
+ 				int8& DestCoverage = MipLevelCoverageData[DestY * MipSizeX + DestX];
+-				if (DestCoverage == 0)
++				if(DestCoverage == 0)
+ 				{
+ 					FLinearColor AccumulatedColor = FLinearColor::Black;
+ 					uint32 Coverage = 0;
+ 
+ 					const int32 MinSourceY = FMath::Max((int32)DestY - 1, (int32)0);
+ 					const int32 MaxSourceY = FMath::Min((int32)DestY + 1, (int32)MipSizeY - 1);
+-					for (int32 SourceY = MinSourceY; SourceY <= MaxSourceY; SourceY++)
++					for(int32 SourceY = MinSourceY; SourceY <= MaxSourceY; SourceY++)
+ 					{
+ 						const int32 MinSourceX = FMath::Max((int32)DestX - 1, (int32)0);
+ 						const int32 MaxSourceX = FMath::Min((int32)DestX + 1, (int32)MipSizeX - 1);
+-						for (int32 SourceX = MinSourceX; SourceX <= MaxSourceX; SourceX++)
++						for(int32 SourceX = MinSourceX; SourceX <= MaxSourceX; SourceX++)
+ 						{
+ 							FColor& SourceColor = MipLevelData[SourceY * MipSizeX + SourceX];
+ 							int8 SourceCoverage = MipLevelCoverageData[SourceY * MipSizeX + SourceX];
+-							if (SourceCoverage > 0)
++							if( SourceCoverage > 0 )
+ 							{
+ 								static const uint32 Weights[3][3] =
+ 								{
+@@ -1246,7 +1244,7 @@ static void GenerateLightmapMipsAndDilateColor(int32 NumMips, int32 TextureSizeX
+ 						}
+ 					}
+ 
+-					if (Coverage)
++					if(Coverage)
+ 					{
+ 						DestColor = (AccumulatedColor / Coverage).QuantizeRound();
+ 						DestCoverage = -1;
+@@ -1257,7 +1255,7 @@ static void GenerateLightmapMipsAndDilateColor(int32 NumMips, int32 TextureSizeX
+ 	}
+ 
+ 	// Fill zero coverage texels with closest colors using mips
+-	for (int32 MipIndex = NumMips - 2; MipIndex >= 0; MipIndex--)
++	for(int32 MipIndex = NumMips - 2; MipIndex >= 0; MipIndex--)
+ 	{
+ 		const int32 DstMipSizeX = FMath::Max(1, TextureSizeX >> MipIndex);
+ 		const int32 DstMipSizeY = FMath::Max(1, TextureSizeY >> MipIndex);
+@@ -1268,25 +1266,25 @@ static void GenerateLightmapMipsAndDilateColor(int32 NumMips, int32 TextureSizeX
+ 		FColor* DstMipData = MipData[MipIndex];
+ 		FColor* SrcMipData = MipData[MipIndex + 1];
+ 
+-		int8* DstMipCoverageData = MipCoverageData[MipIndex];
+-		int8* SrcMipCoverageData = MipCoverageData[MipIndex + 1];
++		int8* DstMipCoverageData = MipCoverageData[ MipIndex ];
++		int8* SrcMipCoverageData = MipCoverageData[ MipIndex + 1 ];
+ 
+-		for (int32 DstY = 0; DstY < DstMipSizeY; DstY++)
++		for(int32 DstY = 0; DstY < DstMipSizeY; DstY++)
+ 		{
+-			for (int32 DstX = 0; DstX < DstMipSizeX; DstX++)
++			for(int32 DstX = 0; DstX < DstMipSizeX; DstX++)
+ 			{
+ 				const uint32 SrcX = DstX / 2;
+ 				const uint32 SrcY = DstY / 2;
+ 
+-				const FColor& SrcColor = SrcMipData[SrcY * SrcMipSizeX + SrcX];
+-				int8 SrcCoverage = SrcMipCoverageData[SrcY * SrcMipSizeX + SrcX];
++				const FColor& SrcColor = SrcMipData[ SrcY * SrcMipSizeX + SrcX ];
++				int8 SrcCoverage = SrcMipCoverageData[ SrcY * SrcMipSizeX + SrcX ];
+ 
+-				FColor& DstColor = DstMipData[DstY * DstMipSizeX + DstX];
+-				int8& DstCoverage = DstMipCoverageData[DstY * DstMipSizeX + DstX];
++				FColor& DstColor = DstMipData[ DstY * DstMipSizeX + DstX ];
++				int8& DstCoverage = DstMipCoverageData[ DstY * DstMipSizeX + DstX ];
+ 
+ 				// Point upsample mip data for zero coverage texels
+ 				// TODO bilinear upsample
+-				if (SrcCoverage != 0 && DstCoverage == 0)
++				if( SrcCoverage != 0 && DstCoverage == 0 )
+ 				{
+ 					DstColor = SrcColor;
+ 					DstCoverage = SrcCoverage;
+@@ -1298,7 +1296,7 @@ static void GenerateLightmapMipsAndDilateColor(int32 NumMips, int32 TextureSizeX
+ 
+ static void GenerateLightmapMipsAndDilateByte(int32 NumMips, int32 TextureSizeX, int32 TextureSizeY, uint8 TextureColor, uint8** MipData, int8** MipCoverageData)
+ {
+-	for (int32 MipIndex = 1; MipIndex < NumMips; MipIndex++)
++	for(int32 MipIndex = 1; MipIndex < NumMips; MipIndex++)
+ 	{
+ 		const int32 SourceMipSizeX = FMath::Max(1, TextureSizeX >> (MipIndex - 1));
+ 		const int32 SourceMipSizeY = FMath::Max(1, TextureSizeY >> (MipIndex - 1));
+@@ -1309,32 +1307,32 @@ static void GenerateLightmapMipsAndDilateByte(int32 NumMips, int32 TextureSizeX,
+ 		uint8* NextMipData = MipData[MipIndex];
+ 		uint8* LastMipData = MipData[MipIndex - 1];
+ 
+-		int8* NextMipCoverageData = MipCoverageData[MipIndex];
+-		int8* LastMipCoverageData = MipCoverageData[MipIndex - 1];
++		int8* NextMipCoverageData = MipCoverageData[ MipIndex ];
++		int8* LastMipCoverageData = MipCoverageData[ MipIndex - 1 ];
+ 
+ 		const int32 MipFactorX = SourceMipSizeX / DestMipSizeX;
+ 		const int32 MipFactorY = SourceMipSizeY / DestMipSizeY;
+ 
+ 		//@todo - generate mips before encoding lightmaps!  
+ 		// Currently we are filtering in the encoded space, similar to generating mips of sRGB textures in sRGB space
+-		for (int32 Y = 0; Y < DestMipSizeY; Y++)
++		for(int32 Y = 0; Y < DestMipSizeY; Y++)
+ 		{
+-			for (int32 X = 0; X < DestMipSizeX; X++)
++			for(int32 X = 0; X < DestMipSizeX; X++)
+ 			{
+ 				float AccumulatedColor = 0;
+ 				uint32 Coverage = 0;
+ 
+ 				const uint32 MinSourceY = (Y + 0) * MipFactorY;
+ 				const uint32 MaxSourceY = (Y + 1) * MipFactorY;
+-				for (uint32 SourceY = MinSourceY; SourceY < MaxSourceY; SourceY++)
++				for(uint32 SourceY = MinSourceY; SourceY < MaxSourceY; SourceY++)
+ 				{
+ 					const uint32 MinSourceX = (X + 0) * MipFactorX;
+ 					const uint32 MaxSourceX = (X + 1) * MipFactorX;
+-					for (uint32 SourceX = MinSourceX; SourceX < MaxSourceX; SourceX++)
++					for(uint32 SourceX = MinSourceX; SourceX < MaxSourceX; SourceX++)
+ 					{
+ 						const uint8& SourceColor = LastMipData[SourceY * SourceMipSizeX + SourceX];
+-						int8 SourceCoverage = LastMipCoverageData[SourceY * SourceMipSizeX + SourceX];
+-						if (SourceCoverage)
++						int8 SourceCoverage = LastMipCoverageData[ SourceY * SourceMipSizeX + SourceX ];
++						if( SourceCoverage )
+ 						{
+ 							AccumulatedColor += SourceColor / 255.0f * SourceCoverage;
+ 							Coverage += SourceCoverage;
+@@ -1343,12 +1341,12 @@ static void GenerateLightmapMipsAndDilateByte(int32 NumMips, int32 TextureSizeX,
+ 				}
+ 				uint8& DestColor = NextMipData[Y * DestMipSizeX + X];
+ 				int8& DestCoverage = NextMipCoverageData[Y * DestMipSizeX + X];
+-				if (GVisualizeLightmapTextures)
++				if ( GVisualizeLightmapTextures )
+ 				{
+ 					DestColor = TextureColor;
+ 					DestCoverage = 127;
+ 				}
+-				else if (Coverage)
++				else if(Coverage)
+ 				{
+ 					DestColor = (uint8)FMath::Clamp<int32>(FMath::TruncToInt(AccumulatedColor / Coverage * 255.f), 0, 255);
+ 					DestCoverage = Coverage / (MipFactorX * MipFactorY);
+@@ -1363,35 +1361,35 @@ static void GenerateLightmapMipsAndDilateByte(int32 NumMips, int32 TextureSizeX,
+ 	}
+ 
+ 	// Expand texels which are mapped into adjacent texels which are not mapped to avoid artifacts when using texture filtering.
+-	for (int32 MipIndex = 0; MipIndex < NumMips; MipIndex++)
++	for(int32 MipIndex = 0; MipIndex < NumMips; MipIndex++)
+ 	{
+ 		uint8* MipLevelData = MipData[MipIndex];
+ 		int8* MipLevelCoverageData = MipCoverageData[MipIndex];
+ 
+-		uint32 MipSizeX = FMath::Max(1, TextureSizeX >> MipIndex);
+-		uint32 MipSizeY = FMath::Max(1, TextureSizeY >> MipIndex);
+-		for (uint32 DestY = 0; DestY < MipSizeY; DestY++)
++		uint32 MipSizeX = FMath::Max(1,TextureSizeX >> MipIndex);
++		uint32 MipSizeY = FMath::Max(1,TextureSizeY >> MipIndex);
++		for(uint32 DestY = 0;DestY < MipSizeY;DestY++)
+ 		{
+-			for (uint32 DestX = 0; DestX < MipSizeX; DestX++)
++			for(uint32 DestX = 0; DestX < MipSizeX; DestX++)
+ 			{
+ 				uint8& DestColor = MipLevelData[DestY * MipSizeX + DestX];
+ 				int8& DestCoverage = MipLevelCoverageData[DestY * MipSizeX + DestX];
+-				if (DestCoverage == 0)
++				if(DestCoverage == 0)
+ 				{
+ 					float AccumulatedColor = 0;
+ 					uint32 Coverage = 0;
+ 
+ 					const int32 MinSourceY = FMath::Max((int32)DestY - 1, (int32)0);
+ 					const int32 MaxSourceY = FMath::Min((int32)DestY + 1, (int32)MipSizeY - 1);
+-					for (int32 SourceY = MinSourceY; SourceY <= MaxSourceY; SourceY++)
++					for(int32 SourceY = MinSourceY; SourceY <= MaxSourceY; SourceY++)
+ 					{
+ 						const int32 MinSourceX = FMath::Max((int32)DestX - 1, (int32)0);
+ 						const int32 MaxSourceX = FMath::Min((int32)DestX + 1, (int32)MipSizeX - 1);
+-						for (int32 SourceX = MinSourceX; SourceX <= MaxSourceX; SourceX++)
++						for(int32 SourceX = MinSourceX; SourceX <= MaxSourceX; SourceX++)
+ 						{
+ 							uint8& SourceColor = MipLevelData[SourceY * MipSizeX + SourceX];
+ 							int8 SourceCoverage = MipLevelCoverageData[SourceY * MipSizeX + SourceX];
+-							if (SourceCoverage > 0)
++							if( SourceCoverage > 0 )
+ 							{
+ 								static const uint32 Weights[3][3] =
+ 								{
+@@ -1405,7 +1403,7 @@ static void GenerateLightmapMipsAndDilateByte(int32 NumMips, int32 TextureSizeX,
+ 						}
+ 					}
+ 
+-					if (Coverage)
++					if(Coverage)
+ 					{
+ 						DestColor = (uint8)FMath::Clamp<int32>(FMath::TruncToInt(AccumulatedColor / Coverage * 255.f), 0, 255);
+ 						DestCoverage = -1;
+@@ -1416,7 +1414,7 @@ static void GenerateLightmapMipsAndDilateByte(int32 NumMips, int32 TextureSizeX,
+ 	}
+ 
+ 	// Fill zero coverage texels with closest colors using mips
+-	for (int32 MipIndex = NumMips - 2; MipIndex >= 0; MipIndex--)
++	for(int32 MipIndex = NumMips - 2; MipIndex >= 0; MipIndex--)
+ 	{
+ 		const int32 DstMipSizeX = FMath::Max(1, TextureSizeX >> MipIndex);
+ 		const int32 DstMipSizeY = FMath::Max(1, TextureSizeY >> MipIndex);
+@@ -1427,25 +1425,25 @@ static void GenerateLightmapMipsAndDilateByte(int32 NumMips, int32 TextureSizeX,
+ 		uint8* DstMipData = MipData[MipIndex];
+ 		uint8* SrcMipData = MipData[MipIndex + 1];
+ 
+-		int8* DstMipCoverageData = MipCoverageData[MipIndex];
+-		int8* SrcMipCoverageData = MipCoverageData[MipIndex + 1];
++		int8* DstMipCoverageData = MipCoverageData[ MipIndex ];
++		int8* SrcMipCoverageData = MipCoverageData[ MipIndex + 1 ];
+ 
+-		for (int32 DstY = 0; DstY < DstMipSizeY; DstY++)
++		for(int32 DstY = 0; DstY < DstMipSizeY; DstY++)
+ 		{
+-			for (int32 DstX = 0; DstX < DstMipSizeX; DstX++)
++			for(int32 DstX = 0; DstX < DstMipSizeX; DstX++)
+ 			{
+ 				const uint32 SrcX = DstX / 2;
+ 				const uint32 SrcY = DstY / 2;
+ 
+-				const uint8& SrcColor = SrcMipData[SrcY * SrcMipSizeX + SrcX];
+-				int8 SrcCoverage = SrcMipCoverageData[SrcY * SrcMipSizeX + SrcX];
++				const uint8& SrcColor = SrcMipData[ SrcY * SrcMipSizeX + SrcX ];
++				int8 SrcCoverage = SrcMipCoverageData[ SrcY * SrcMipSizeX + SrcX ];
+ 
+-				uint8& DstColor = DstMipData[DstY * DstMipSizeX + DstX];
+-				int8& DstCoverage = DstMipCoverageData[DstY * DstMipSizeX + DstX];
++				uint8& DstColor = DstMipData[ DstY * DstMipSizeX + DstX ];
++				int8& DstCoverage = DstMipCoverageData[ DstY * DstMipSizeX + DstX ];
+ 
+ 				// Point upsample mip data for zero coverage texels
+ 				// TODO bilinear upsample
+-				if (SrcCoverage != 0 && DstCoverage == 0)
++				if( SrcCoverage != 0 && DstCoverage == 0 )
+ 				{
+ 					DstColor = SrcColor;
+ 					DstCoverage = SrcCoverage;
+@@ -1459,11 +1457,11 @@ void FLightMapPendingTexture::CreateUObjects()
+ {
+ 	check(IsInGameThread());
+ 	++GLightmapCounter;
+-
++	
+ 	// Only build VT lightmaps if they are enabled
+ 	const bool bUseVirtualTextures = (CVarVirtualTexturedLightMaps.GetValueOnAnyThread() != 0) && UseVirtualTexturing(GMaxRHIShaderPlatform);
+ 	const bool bIncludeNonVirtualTextures = !bUseVirtualTextures || (CVarIncludeNonVirtualTexturedLightMaps.GetValueOnAnyThread() != 0);
+-
++	
+ 	if (bIncludeNonVirtualTextures)
+ 	{
+ 		if (NeedsSkyOcclusionTexture())
+@@ -1498,8 +1496,8 @@ void FLightMapPendingTexture::CreateUObjects()
+ 			}
+ 		}
+ #endif
+-		// MagicDawn PRT_LM_LQ End, limitcai
+-
++	// MagicDawn PRT_LM_LQ End, limitcai
++	
+ 		if (NeedsStaticShadowTexture())
+ 		{
+ 			ShadowMapTexture = NewObject<UShadowMapTexture2D>(Outer, GetShadowTextureName(GLightmapCounter));
+@@ -1575,7 +1573,7 @@ void FLightMapPendingTexture::CreateUObjects()
+ 	{
+ 		FMemory::Memzero(VirtualTextures);
+ 	}
+-
++	
+ 	check(bUObjectsCreated == false);
+ 	bUObjectsCreated = true;
+ }
+@@ -1673,12 +1671,12 @@ bool FLightMapPendingTexture::NeedsPrtLQTextures() const
+ 			// Todo: adapt the VirtualTexture
+ 			return VirtualTextures[0]->HasLayerForType(ELightMapVirtualTextureType::SkyOcclusion);
+ 		}
+-		return PrtLQTextures[0] && PrtLQTextures[1];
++		return PrtLQTextures[0] && PrtLQTextures[1];  
+ 	}
+ 
+ 	if (const auto WorldSettings = OwningWorld.IsValid() ? OwningWorld->GetWorldSettings() : nullptr)
+ 	{
+-		if (!WorldSettings->bPrtEnabled || WorldSettings->LightmapPrtMethod != Lightmap_PRT_LQ_Method)
++		if (!WorldSettings->bPrtEnabled || WorldSettings->LightmapPrtMethod!= Lightmap_PRT_LQ_Method)
+ 		{
+ 			return false;
+ 		}
+@@ -1687,7 +1685,7 @@ bool FLightMapPendingTexture::NeedsPrtLQTextures() const
+ 	for (int32 AllocationIndex = 0; AllocationIndex < Allocations.Num(); AllocationIndex++)
+ 	{
+ 		auto& Allocation = Allocations[AllocationIndex];
+-
++	
+ 		if (Allocation->bHasPrtLQTextures)
+ 		{
+ 			return true;
+@@ -1713,7 +1711,7 @@ bool FLightMapPendingTexture::NeedsStaticTextures() const
+ 	for (int32 AllocationIndex = 0; AllocationIndex < Allocations.Num(); AllocationIndex++)
+ 	{
+ 		auto& Allocation = Allocations[AllocationIndex];
+-
++	
+ 		if (Allocation->bHasStaticTextures)
+ 		{
+ 			return true;
+@@ -1803,7 +1801,7 @@ void FLightMapPendingTexture::EncodeSkyOcclusionTexture(UTexture* Texture, uint3
+ 					int32 DestY = Y - Allocation->MappedRect.Min.Y + Allocation->OffsetY;
+ 					int32 DestX = X - Allocation->MappedRect.Min.X + Allocation->OffsetX;
+ 
+-					FColor& DestColor = TopMipData[DestY * TextureSizeX + DestX];
++					FColor&	DestColor = TopMipData[DestY * TextureSizeX + DestX];
+ 
+ 					DestColor.R = SourceCoefficients.SkyOcclusion[0];
+ 					DestColor.G = SourceCoefficients.SkyOcclusion[1];
+@@ -2583,26 +2581,26 @@ void FLightMapPendingTexture::EncodePrtHQTexture(int32 Index, int32 FormatType,
+ 		}
+ 		else
+ 		{
+-			if (FormatType == 0) {
++			if (FormatType == 0){
+ 				Encode2OrderTransferCoefficientTexture<FPackedTransfer16FColor>(this, Texture, 0u, TextureColor, bCompression, true);
+ 			}
+-			else if (FormatType == 1) {
++			else if (FormatType == 1){
+ 				Encode2OrderTransferCoefficientTexture<FPackedTransferRGBAColor>(this, Texture, 0u, TextureColor, bCompression, true);
+ 			}
+-			else {
++			else{
+ 				Encode2OrderTransferCoefficientTexture<FPackedTransferRGBEColor>(this, Texture, 0u, TextureColor, bCompression, false);
+ 			}
+ 		}
+ 	}
+ 	else
+ 	{
+-		if (FormatType == 0) {
++		if (FormatType == 0){
+ 			EncodeTransferCoefficientTexture<FPackedTransfer16FColor>(this, Index, Texture, 0u, TextureColor, bCompression, true);
+ 		}
+-		else if (FormatType == 1) {
++		else if (FormatType == 1){
+ 			EncodeTransferCoefficientTexture<FPackedTransferRGBAColor>(this, Index, Texture, 0u, TextureColor, bCompression, true);
+ 		}
+-		else {
++		else{
+ 			EncodeTransferCoefficientTexture<FPackedTransferRGBEColor>(this, Index, Texture, 0u, TextureColor, bCompression, false);
+ 		}
+ 	}
+@@ -2615,7 +2613,7 @@ void FLightMapPendingTexture::EncodePrtHQTexture(int32 Index, int32 FormatType,
+ void FLightMapPendingTexture::EncodePrtLQTexture(int32 Index, UTexture* Texture, uint32 LayerIndex, const FColor& TextureColor)
+ {
+ 	check(Index >= 0 && Index < UE_ARRAY_COUNT(PrtLQTextures))
+-		const int32 NumMips = Texture->Source.GetNumMips();
++	const int32 NumMips = Texture->Source.GetNumMips();
+ 	check(NumMips > 0);
+ 
+ 	FTextureFormatSettings FormatSettings;
+@@ -2873,11 +2871,11 @@ void FLightMapPendingTexture::EncodeCoefficientTexture(int32 CoefficientIndex, U
+ 					int32 DestY = Y - Allocation->MappedRect.Min.Y + Allocation->OffsetY;
+ 					int32 DestX = X - Allocation->MappedRect.Min.X + Allocation->OffsetX;
+ 
+-					FColor& DestColor = MipData0[0][DestY * TextureSizeX + DestX];
+-					int8& DestCoverage = MipCoverageData0[0][DestY * TextureSizeX + DestX];
++					FColor&	DestColor = MipData0[0][DestY * TextureSizeX + DestX];
++					int8&	DestCoverage = MipCoverageData0[0][DestY * TextureSizeX + DestX];
+ 
+-					FColor& DestBottomColor = MipData1[0][DestX + DestY * TextureSizeX];
+-					int8& DestBottomCoverage = MipCoverageData1[0][DestX + DestY * TextureSizeX];
++					FColor&	DestBottomColor = MipData1[0][DestX + DestY * TextureSizeX];
++					int8&	DestBottomCoverage = MipCoverageData1[0][DestX + DestY * TextureSizeX];
+ 
+ #if VISUALIZE_PACKING
+ 					if (X == Allocation->MappedRect.Min.X || Y == Allocation->MappedRect.Min.Y ||
+@@ -2985,7 +2983,7 @@ void FLightMapPendingTexture::StartEncoding(const FStaticLightingBuildContext* L
+ 	}
+ 
+ 	FColor TextureColor;
+-	if (GVisualizeLightmapTextures)
++	if ( GVisualizeLightmapTextures )
+ 	{
+ 		TextureColor = FColor::MakeRandomColor();
+ 	}
+@@ -3005,20 +3003,20 @@ void FLightMapPendingTexture::StartEncoding(const FStaticLightingBuildContext* L
+ 		auto Texture = SkyOcclusionTexture;
+ 		Texture->Source.Init2DWithMipChain(GetSizeX(), GetSizeY(), SkyOcclusionFormat);
+ 		Texture->MipGenSettings = TMGS_LeaveExistingMips;
+-		Texture->Filter = GUseBilinearLightmaps ? TF_Default : TF_Nearest;
++		Texture->Filter	= GUseBilinearLightmaps ? TF_Default : TF_Nearest;
+ 		Texture->LODGroup = TEXTUREGROUP_Lightmap;
+-		Texture->LightmapFlags = ELightMapFlags(LightmapFlags);
++		Texture->LightmapFlags = ELightMapFlags( LightmapFlags );
+ 		EncodeSkyOcclusionTexture(Texture, 0u, TextureColor);
+ 	}
+-
++	
+ 	if (AOMaterialMaskTexture != nullptr)
+ 	{
+ 		auto Texture = AOMaterialMaskTexture;
+ 		Texture->Source.Init2DWithMipChain(GetSizeX(), GetSizeY(), AOMaskFormat);
+ 		Texture->MipGenSettings = TMGS_LeaveExistingMips;
+-		Texture->Filter = GUseBilinearLightmaps ? TF_Default : TF_Nearest;
++		Texture->Filter	= GUseBilinearLightmaps ? TF_Default : TF_Nearest;
+ 		Texture->LODGroup = TEXTUREGROUP_Lightmap;
+-		Texture->LightmapFlags = ELightMapFlags(LightmapFlags);
++		Texture->LightmapFlags = ELightMapFlags( LightmapFlags );
+ 		EncodeAOMaskTexture(Texture, 0u, TextureColor);
+ 	}
+ 
+@@ -3060,7 +3058,7 @@ void FLightMapPendingTexture::StartEncoding(const FStaticLightingBuildContext* L
+ 	}
+ #endif
+ 	// MagicDawn PRT_LM_LQ End, limitcai
+-
++	
+ 	if (ShadowMapTexture != nullptr)
+ 	{
+ 		ShadowMapTexture->Filter = GUseBilinearLightmaps ? TF_Default : TF_Nearest;
+@@ -3076,7 +3074,7 @@ void FLightMapPendingTexture::StartEncoding(const FStaticLightingBuildContext* L
+ 	}
+ 
+ 	// Encode and compress the coefficient textures.
+-	for (uint32 CoefficientIndex = 0; CoefficientIndex < NUM_STORED_LIGHTMAP_COEF; CoefficientIndex += 2)
++	for(uint32 CoefficientIndex = 0; CoefficientIndex < NUM_STORED_LIGHTMAP_COEF; CoefficientIndex += 2)
+ 	{
+ 		auto Texture = Textures[CoefficientIndex];
+ 		if (Texture == nullptr)
+@@ -3086,9 +3084,9 @@ void FLightMapPendingTexture::StartEncoding(const FStaticLightingBuildContext* L
+ 
+ 		Texture->Source.Init2DWithMipChain(GetSizeX(), GetSizeY() * 2, BaseFormat);	// Top/bottom atlased
+ 		Texture->MipGenSettings = TMGS_LeaveExistingMips;
+-		Texture->Filter = GUseBilinearLightmaps ? TF_Default : TF_Nearest;
++		Texture->Filter	= GUseBilinearLightmaps ? TF_Default : TF_Nearest;
+ 		Texture->LODGroup = TEXTUREGROUP_Lightmap;
+-		Texture->LightmapFlags = ELightMapFlags(LightmapFlags);
++		Texture->LightmapFlags = ELightMapFlags( LightmapFlags );
+ 
+ 		EncodeCoefficientTexture(CoefficientIndex, Texture, 0u, TextureColor, false);
+ 	}
+@@ -3173,7 +3171,7 @@ void FLightMapPendingTexture::StartEncoding(const FStaticLightingBuildContext* L
+ 		Allocation.LightMap->PrtHQTextures[1] = PrtHQTextures[1];
+ #endif
+ 		// MagicDawn PRT_LM_HQ End, limitcai
+-		// MagicDawn PRT_LM_LQ Begin, limitcai
++        // MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+ 		Allocation.LightMap->PrtLQTextures[0] = PrtLQTextures[0];
+ 		Allocation.LightMap->PrtLQTextures[1] = PrtLQTextures[1];
+@@ -3208,7 +3206,8 @@ FName FLightMapPendingTexture::GetLightmapName(int32 TextureIndex, int32 Coeffic
+ 		}
+ 		ExistingObject = FindObject<UObject>(Outer, *PotentialName);
+ 		LightmapIndex++;
+-	} while (ExistingObject != NULL);
++	}
++	while (ExistingObject != NULL);
+ 	return FName(*PotentialName);
+ }
+ 
+@@ -3251,7 +3250,8 @@ FName FLightMapPendingTexture::GetSkyOcclusionTextureName(int32 TextureIndex)
+ 
+ 		ExistingObject = FindObject<UObject>(Outer, *PotentialName);
+ 		LightmapIndex++;
+-	} while (ExistingObject != NULL);
++	}
++	while (ExistingObject != NULL);
+ 	return FName(*PotentialName);
+ }
+ 
+@@ -3267,7 +3267,8 @@ FName FLightMapPendingTexture::GetAOMaterialMaskTextureName(int32 TextureIndex)
+ 
+ 		ExistingObject = FindObject<UObject>(Outer, *PotentialName);
+ 		LightmapIndex++;
+-	} while (ExistingObject != NULL);
++	}
++	while (ExistingObject != NULL);
+ 	return FName(*PotentialName);
+ }
+ 
+@@ -3276,7 +3277,7 @@ FName FLightMapPendingTexture::GetAOMaterialMaskTextureName(int32 TextureIndex)
+ FName FLightMapPendingTexture::GetPrtHQTextureName(int32 TextureIndex, int32 Index)
+ {
+ 	check(Index >= 0 && Index < UE_ARRAY_COUNT(PrtHQTextures))
+-		FString PotentialName = TEXT("");
++	FString PotentialName = TEXT("");
+ 	UObject* ExistingObject = NULL;
+ 	int32 LightmapIndex = 0;
+ 	// Search for an unused name
+@@ -3297,7 +3298,7 @@ FName FLightMapPendingTexture::GetPrtHQTextureName(int32 TextureIndex, int32 Ind
+ FName FLightMapPendingTexture::GetPrtLQTextureName(int32 TextureIndex, int32 Index)
+ {
+ 	check(Index >= 0 && Index < UE_ARRAY_COUNT(PrtLQTextures))
+-		FString PotentialName = TEXT("");
++	FString PotentialName = TEXT("");
+ 	UObject* ExistingObject = NULL;
+ 	int32 LightmapIndex = 0;
+ 	// Search for an unused name
+@@ -3307,7 +3308,8 @@ FName FLightMapPendingTexture::GetPrtLQTextureName(int32 TextureIndex, int32 Ind
+ 
+ 		ExistingObject = FindObject<UObject>(Outer, *PotentialName);
+ 		LightmapIndex++;
+-	} while (ExistingObject != NULL);
++	}
++	while (ExistingObject != NULL);
+ 	return FName(*PotentialName);
+ }
+ #endif
+@@ -3428,10 +3430,10 @@ TRefCountPtr<FLightMap2D> FLightMap2D::AllocateLightMap(UObject* LightMapOuter,
+ 			Allocation->bHasPrtHQTextures = SourceQuantizedData->bHasPrtHQTextures;
+ #endif
+ 			// MagicDawn PRT_LM_HQ End, limitcai
+-			// MagicDawn PRT_LM_LQ Begin, limitcai
++            // MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+-			FMemory::Memcpy(Allocation->PrtLQScale, SourceQuantizedData->PrtLQScale, sizeof(Allocation->PrtLQScale));
+-			FMemory::Memcpy(Allocation->PrtLQAdd, SourceQuantizedData->PrtLQAdd, sizeof(Allocation->PrtLQAdd));
++            FMemory::Memcpy(Allocation->PrtLQScale, SourceQuantizedData->PrtLQScale, sizeof(Allocation->PrtLQScale));
++			FMemory::Memcpy(Allocation->PrtLQAdd, SourceQuantizedData->PrtLQAdd, sizeof(Allocation->PrtLQAdd));			
+ 			Allocation->bHasPrtLQTextures = SourceQuantizedData->bHasPrtLQTextures;
+ 			Allocation->bHasStaticTextures = SourceQuantizedData->bHasStaticTextures;
+ #endif
+@@ -3779,28 +3781,29 @@ void FLightMap2D::LoadNeuralLightMapTexture(UTexture2D* Texture, uint32 SizeX, u
+ 	Texture->GetPlatformData()->SizeX = SizeX;
+ 	Texture->GetPlatformData()->SizeY = SizeY;
+ 	Texture->GetPlatformData()->SetNumSlices(1);
+-	Texture->GetPlatformData()->PixelFormat = PF_A32B32G32R32F;
+-
++	Texture->GetPlatformData()->PixelFormat = PF_FloatRGBA;
++	
+ 	Texture->Filter = GUseBilinearLightmaps ? TF_Default : TF_Nearest;
+ 	Texture->LODGroup = TEXTUREGROUP_Lightmap;
+-
++	
+ 	FTexture2DMipMap* Mip = new FTexture2DMipMap(Texture->GetPlatformData()->SizeX, Texture->GetPlatformData()->SizeY, 1);
+ 	Texture->GetPlatformData()->Mips.Add(Mip);
+-
++	
+ 	Mip->BulkData.Lock(LOCK_READ_WRITE);
+ 	const int32 Mip0Size = Mip->SizeX * Mip->SizeY * GPixelFormats[Texture->GetPixelFormat()].BlockBytes;
+ 	void* DestImageData = Mip->BulkData.Realloc(Mip0Size);
+-
++	
+ 	FString FilePath = FString::Printf(TEXT("%s_featuremap.bin"), *Texture->GetName());
+ 	FString RawDataFilePath = FPaths::Combine(FPaths::ProjectContentDir(), TEXT("RawData"), FilePath);
+ 	UE_LOG(LogLightMap, Log, TEXT("Neural LightMap Name :%s"), *Texture->GetName());
++	UE_LOG(LogLightMap, Log, TEXT("Mip0Size0000 :%d,%d,%d"), Mip0Size, Mip->SizeX, Mip->SizeY);
+ 	TArray<uint8> RawData;
+ 	if (FFileHelper::LoadFileToArray(RawData, *RawDataFilePath))
+ 	{
+ 		check(RawData.Num() <= Mip0Size);
+ 		FMemory::Memcpy(DestImageData, RawData.GetData(), RawData.Num());
+ 	}
+-
++	
+ 	Mip->BulkData.Unlock();
+ 	Texture->UpdateResource();
+ }
+@@ -3815,7 +3818,7 @@ void FLightMap2D::LoadNeuralLightMapParameters(TArray<FVector4f>& NeuralLightMap
+ 	TArray<uint8> RawData;
+ 	if (FFileHelper::LoadFileToArray(RawData, *RawDataFilePath1))
+ 	{
+-		check(RawData.Num() <= NumLen * sizeof(FVector4f));
++		check(RawData.Num() <= NumLen * sizeof(FVector4f));	
+ 		FMemory::Memcpy(NeuralLightMapParameters.GetData(), RawData.GetData(), NumLen * sizeof(FVector4f));
+ 	}
+ 	else
+@@ -3838,7 +3841,7 @@ void FLightMap2D::EncodeTextures(const FStaticLightingBuildContext* LightingCont
+ 		const bool bUseVirtualTextures = (CVarVirtualTexturedLightMaps.GetValueOnAnyThread() != 0) && UseVirtualTexturing(GMaxRHIShaderPlatform);
+ 		const bool bIncludeNonVirtualTextures = !bUseVirtualTextures || (CVarIncludeNonVirtualTexturedLightMaps.GetValueOnAnyThread() != 0);
+ 
+-		GWarn->BeginSlowTask(NSLOCTEXT("LightMap2D", "BeginEncodingLightMapsTask", "Encoding light-maps"), false);
++		GWarn->BeginSlowTask( NSLOCTEXT("LightMap2D", "BeginEncodingLightMapsTask", "Encoding light-maps"), false );
+ 		int32 PackedLightAndShadowMapTextureSizeX = LightingContext->World->GetWorldSettings()->PackedLightAndShadowMapTextureSize;
+ 		int32 PackedLightAndShadowMapTextureSizeY = PackedLightAndShadowMapTextureSizeX / 2;
+ 
+@@ -3884,10 +3887,10 @@ void FLightMap2D::EncodeTextures(const FStaticLightingBuildContext* LightingCont
+ 				PendingGroup.TotalTexels += ((Allocation->MappedRect.Width() + 3) & ~3) * ((Allocation->MappedRect.Height() + 3) & ~3);
+ 			}
+ 		}
+-		// MagicDawn Plugin Begin, limitcai
++        // MagicDawn Plugin Begin, limitcai
+ 		// Sort the light-maps in descending order by size.
+-		Sort(PendingLightMaps.GetData(), PendingLightMaps.Num(), FCompareLightmaps());
+-		// MagicDawn Plugin End, limitcai
++		Sort(PendingLightMaps.GetData(), PendingLightMaps.Num(),  FCompareLightmaps());
++        // MagicDawn Plugin End, limitcai
+ 
+ 		// Allocate texture space for each light-map.
+ 		TArray<FLightMapPendingTexture*> PendingTextures;
+@@ -3968,7 +3971,7 @@ void FLightMap2D::EncodeTextures(const FStaticLightingBuildContext* LightingCont
+ 			// allocate memory for all the async encode tasks
+ 			TArray<FAsyncEncode<FLightMapPendingTexture>> AsyncEncodeTasks;
+ 			AsyncEncodeTasks.Empty(PendingTextures.Num());
+-			for (auto& Texture : PendingTextures)
++			for (auto& Texture :PendingTextures)
+ 			{
+ 				// precreate the UObjects then give them to some threads to process
+ 				// need to precreate Uobjects 
+@@ -3993,7 +3996,7 @@ void FLightMap2D::EncodeTextures(const FStaticLightingBuildContext* LightingCont
+ 					GWarn->UpdateProgress(TextureIndex, PendingTextures.Num());
+ 				}
+ 				FLightMapPendingTexture* PendingTexture = PendingTextures[TextureIndex];
+-				PendingTexture->StartEncoding(LightingContext, nullptr);
++				PendingTexture->StartEncoding(LightingContext,nullptr);
+ 			}
+ 		}
+ 
+@@ -4029,7 +4032,7 @@ void FLightMap2D::EncodeTextures(const FStaticLightingBuildContext* LightingCont
+ 
+ 		// End the encoding lighmaps slow task
+ 		GWarn->EndSlowTask();
+-
++		
+ 	}
+ 	else
+ 	{
+@@ -4323,8 +4326,8 @@ FLightMap2D::FLightMap2D()
+ 	// MagicDawn PRT_LM_HQ End, limitcai
+ 	// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+-	PrtLQTextures[0] = nullptr;
+-	PrtLQTextures[1] = nullptr;
++    PrtLQTextures[0] = nullptr;
++    PrtLQTextures[1] = nullptr;
+ #endif
+ 	// MagicDawn PRT_LM_LQ End, limitcai
+ 	/** HPRC Example Start */
+@@ -4463,16 +4466,16 @@ bool FLightMap2D::IsVirtualTextureValid() const
+ bool FLightMap2D::IsPrtTextureValid() const
+ {
+ 	bool isVaild = false;
+-	// MagicDawn PRT_LM_HQ Begin, limitcai
++// MagicDawn PRT_LM_HQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_HQ_ENABLE
+ 	isVaild |= PrtHQTextures[0] != nullptr;
+ #endif
+-	// MagicDawn PRT_LM_HQ End, limitcai
+-	// MagicDawn PRT_LM_LQ Begin, limitcai
++// MagicDawn PRT_LM_HQ End, limitcai
++// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+ 	isVaild |= PrtLQTextures[0] != nullptr;
+ #endif
+-	// MagicDawn PRT_LM_LQ End, limitcai
++// MagicDawn PRT_LM_LQ End, limitcai
+ 	return isVaild;
+ }
+ #endif
+@@ -4494,13 +4497,13 @@ struct FLegacyLightMapTextureInfo
+ 	FLinearColor Scale;
+ 	FLinearColor Bias;
+ 
+-	friend FArchive& operator<<(FArchive& Ar, FLegacyLightMapTextureInfo& I)
++	friend FArchive& operator<<(FArchive& Ar,FLegacyLightMapTextureInfo& I)
+ 	{
+ 		return Ar << I.Texture << I.Scale << I.Bias;
+ 	}
+ };
+ 
+-void FLightMap2D::AddReferencedObjects(FReferenceCollector& Collector)
++void FLightMap2D::AddReferencedObjects( FReferenceCollector& Collector )
+ {
+ 	Collector.AddReferencedObject(Textures[0]);
+ 	Collector.AddReferencedObject(Textures[1]);
+@@ -4517,7 +4520,7 @@ void FLightMap2D::AddReferencedObjects(FReferenceCollector& Collector)
+ 	// MagicDawn PRT_LM_HQ End, limitcai
+ 	// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+-	Collector.AddReferencedObject(PrtLQTextures[0]);
++    Collector.AddReferencedObject(PrtLQTextures[0]);
+ 	Collector.AddReferencedObject(PrtLQTextures[1]);
+ #endif
+ 	// MagicDawn PRT_LM_LQ End, limitcai
+@@ -4541,9 +4544,9 @@ void FLightMap2D::Serialize(FArchive& Ar)
+ 
+ 	const bool bUsingVTLightmaps = (CVarVirtualTexturedLightMaps.GetValueOnAnyThread() != 0) && UseVirtualTexturing(GMaxRHIShaderPlatform, Ar.CookingTarget());
+ 
+-	if (Ar.IsLoading() && Ar.UEVer() < VER_UE4_LOW_QUALITY_DIRECTIONAL_LIGHTMAPS)
++	if( Ar.IsLoading() && Ar.UEVer() < VER_UE4_LOW_QUALITY_DIRECTIONAL_LIGHTMAPS )
+ 	{
+-		for (uint32 CoefficientIndex = 0; CoefficientIndex < 3; CoefficientIndex++)
++		for(uint32 CoefficientIndex = 0;CoefficientIndex < 3;CoefficientIndex++)
+ 		{
+ 			ULightMapTexture2D* Dummy = NULL;
+ 			Ar << Dummy;
+@@ -4552,9 +4555,9 @@ void FLightMap2D::Serialize(FArchive& Ar)
+ 			Ar << Dummy2;
+ 		}
+ 	}
+-	else if (Ar.IsLoading() && Ar.UEVer() < VER_UE4_COMBINED_LIGHTMAP_TEXTURES)
++	else if( Ar.IsLoading() && Ar.UEVer() < VER_UE4_COMBINED_LIGHTMAP_TEXTURES )
+ 	{
+-		for (uint32 CoefficientIndex = 0; CoefficientIndex < 4; CoefficientIndex++)
++		for( uint32 CoefficientIndex = 0; CoefficientIndex < 4; CoefficientIndex++ )
+ 		{
+ 			ULightMapTexture2D* Dummy = NULL;
+ 			Ar << Dummy;
+@@ -4608,8 +4611,8 @@ void FLightMap2D::Serialize(FArchive& Ar)
+ 				}
+ 			}
+ 		}
+-
+-		for (uint32 CoefficientIndex = 0; CoefficientIndex < NUM_STORED_LIGHTMAP_COEF; CoefficientIndex++)
++		
++		for(uint32 CoefficientIndex = 0;CoefficientIndex < NUM_STORED_LIGHTMAP_COEF;CoefficientIndex++)
+ 		{
+ 			Ar << ScaleVectors[CoefficientIndex];
+ 			Ar << AddVectors[CoefficientIndex];
+@@ -4743,17 +4746,17 @@ void FLightMap2D::Serialize(FArchive& Ar)
+ 		VirtualTextures[1] = nullptr;
+ 	}
+ 
+-
++	
+ 	// Force no divide by zeros even with low precision. This should be fixed during build but for some reason isn't.
+-	if (Ar.IsLoading())
++	if( Ar.IsLoading() )
+ 	{
+-		for (int k = 0; k < 3; k++)
++		for( int k = 0; k < 3; k++ )
+ 		{
+-			ScaleVectors[2][k] = FMath::Max(0.0f, ScaleVectors[2][k]);
+-			AddVectors[2][k] = FMath::Max(0.01f, AddVectors[2][k]);
++			ScaleVectors[2][k] = FMath::Max( 0.0f, ScaleVectors[2][k] );
++			AddVectors[2][k] = FMath::Max( 0.01f, AddVectors[2][k] );
+ 		}
+ 
+-		// MagicDawn PRT_LM_LQ Begin, limitcai
++// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+ 		if (DawnCustomVersion >= FDawnObjectVersion::PRTLQLightmaps)
+ 		{
+@@ -4763,7 +4766,7 @@ void FLightMap2D::Serialize(FArchive& Ar)
+ 			}
+ 		}
+ #endif
+-		// MagicDawn PRT_LM_LQ End, limitcai
++// MagicDawn PRT_LM_LQ End, limitcai
+ 	}
+ 
+ 	//Release unneeded texture references on load so they will be garbage collected.
+@@ -4819,16 +4822,16 @@ FLightMap2D::FLightMap2D(const FLightMap2D* InLightMap2D)
+ 		SkyOcclusionTexture = InLightMap2D->SkyOcclusionTexture;
+ 		AOMaterialMaskTexture = InLightMap2D->AOMaterialMaskTexture;
+ 		ShadowMapTexture = InLightMap2D->ShadowMapTexture;
+-		for (int i = 0; i < NUM_STORED_LIGHTMAP_COEF; i++)
++		for (int i=0;i< NUM_STORED_LIGHTMAP_COEF;i++)
+ 		{
+ 			ScaleVectors[i] = InLightMap2D->ScaleVectors[i];
+ 			AddVectors[i] = InLightMap2D->AddVectors[i];
+ 		}
+ 		// MagicDawn PRT_LM_HQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_HQ_ENABLE
+-		PrtHQTextures[0] = InLightMap2D->PrtHQTextures[0];
+-		PrtHQTextures[1] = InLightMap2D->PrtHQTextures[1];
+-		for (int i = 0; i < NUM_STORED_LIGHTMAP_COEF; i++)
++        PrtHQTextures[0] = InLightMap2D->PrtHQTextures[0];
++        PrtHQTextures[1] = InLightMap2D->PrtHQTextures[1];
++        for (int i=0;i< NUM_STORED_LIGHTMAP_COEF;i++)
+ 		{
+ 			PrtHQScaleVectors[i] = InLightMap2D->PrtHQScaleVectors[i];
+ 			PrtHQAddVectors[i] = InLightMap2D->PrtHQAddVectors[i];
+@@ -4837,16 +4840,16 @@ FLightMap2D::FLightMap2D(const FLightMap2D* InLightMap2D)
+ 		// MagicDawn PRT_LM_HQ End, limitcai
+ 		// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+-		PrtLQTextures[0] = InLightMap2D->PrtLQTextures[0];
+-		PrtLQTextures[1] = InLightMap2D->PrtLQTextures[1];
+-		PrtLQScaleVector = InLightMap2D->PrtLQScaleVector;
+-		PrtLQAddVector = InLightMap2D->PrtLQAddVector;
++        PrtLQTextures[0] = InLightMap2D->PrtLQTextures[0];
++        PrtLQTextures[1] = InLightMap2D->PrtLQTextures[1];
++        PrtLQScaleVector = InLightMap2D->PrtLQScaleVector;
++		PrtLQAddVector   = InLightMap2D->PrtLQAddVector;
+ #endif
+ 		// MagicDawn PRT_LM_LQ End, limitcai
+ 		/** HPRC Example Start */
+ 		NeuralLightMapTexture = InLightMap2D->NeuralLightMapTexture;
+ 		/** HPRC Example End */
+-		VirtualTextures[0] = InLightMap2D->VirtualTextures[0];
++        VirtualTextures[0] = InLightMap2D->VirtualTextures[0];
+ 		VirtualTextures[1] = InLightMap2D->VirtualTextures[1];
+ 
+ 		CoordinateScale = InLightMap2D->CoordinateScale;
+@@ -4864,20 +4867,20 @@ FLightMap2D::FLightMap2D(const FLightMap2D* InLightMap2D)
+ 		ShadowMapTexture = NULL;
+ 		// MagicDawn PRT_LM_HQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_HQ_ENABLE
+-		PrtHQTextures[0] = NULL;
+-		PrtHQTextures[1] = NULL;
++        PrtHQTextures[0] = NULL;
++        PrtHQTextures[1] = NULL;
+ #endif
+ 		// MagicDawn PRT_LM_HQ End, limitcai
+ 		// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+-		PrtLQTextures[0] = NULL;
+-		PrtLQTextures[1] = NULL;
++        PrtLQTextures[0] = NULL;
++        PrtLQTextures[1] = NULL;
+ #endif
+ 		// MagicDawn PRT_LM_LQ End, limitcai
+ 		/** HPRC Example Start */
+ 		NeuralLightMapTexture = NULL;
+ 		/** HPRC Example End */
+-		VirtualTextures[0] = NULL;
++        VirtualTextures[0] = NULL;
+ 		VirtualTextures[1] = NULL;
+ 	}
+ }
+@@ -4893,7 +4896,7 @@ FLightMapInteraction FLightMap2D::GetInteraction(ERHIFeatureLevel::Type InFeatur
+ 	if (!bUseVirtualTextures)
+ 	{
+ 		// MagicDawn Plugin Begin, limitcai
+-		bool bValidTextures = (Textures[LightmapIndex] && Textures[LightmapIndex]->GetResource())
++		bool bValidTextures = (Textures[LightmapIndex] && Textures[LightmapIndex]->GetResource()) 
+ 			// MagicDawn PRT_LM_HQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_HQ_ENABLE
+ 
+@@ -4911,18 +4914,18 @@ FLightMapInteraction FLightMap2D::GetInteraction(ERHIFeatureLevel::Type InFeatur
+ 		// When the FLightMap2D is first created, the textures aren't set, so that case needs to be handled.
+ 		if (bValidTextures)
+ 		{
+-			return FLightMapInteraction::Texture(ToRawPtrArray(Textures), SkyOcclusionTexture, AOMaterialMaskTexture, NeuralLightMapTexture, NeuralLightMapParameters, ScaleVectors, AddVectors,
+-				// MagicDawn PRT_LM_HQ Begin, limitcai
++			return FLightMapInteraction::Texture(ToRawPtrArray(Textures), SkyOcclusionTexture, AOMaterialMaskTexture, NeuralLightMapTexture, NeuralLightMapParameters, ScaleVectors, AddVectors, 
++			// MagicDawn PRT_LM_HQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_HQ_ENABLE
+-				ToRawPtrArray(PrtHQTextures), PrtHQScaleVectors, PrtHQAddVectors,
++			ToRawPtrArray(PrtHQTextures), PrtHQScaleVectors, PrtHQAddVectors,
+ #endif
+-				// MagicDawn PRT_LM_HQ End, limitcai
+-				// MagicDawn PRT_LM_LQ Begin, limitcai
++			// MagicDawn PRT_LM_HQ End, limitcai
++			// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE  
+-				ToRawPtrArray(PrtLQTextures), PrtLQScaleVector, PrtLQAddVector,
++			ToRawPtrArray(PrtLQTextures), PrtLQScaleVector, PrtLQAddVector, 
+ #endif
+-				// MagicDawn PRT_LM_LQ End, limitcai
+-				CoordinateScale, CoordinateBias, bHighQuality);
++			// MagicDawn PRT_LM_LQ End, limitcai
++			CoordinateScale, CoordinateBias, bHighQuality);
+ 		}
+ 	}
+ 	else
+@@ -4970,7 +4973,7 @@ void FLegacyLightMap1D::Serialize(FArchive& Ar)
+ 
+ 	Ar << Owner;
+ 
+-	DirectionalSamples.Serialize(Ar, Owner, INDEX_NONE, false);
++	DirectionalSamples.Serialize( Ar, Owner, INDEX_NONE, false );
+ 
+ 	for (int32 ElementIndex = 0; ElementIndex < 5; ElementIndex++)
+ 	{
+@@ -4978,7 +4981,7 @@ void FLegacyLightMap1D::Serialize(FArchive& Ar)
+ 		Ar << Dummy;
+ 	}
+ 
+-	SimpleSamples.Serialize(Ar, Owner, INDEX_NONE, false);
++	SimpleSamples.Serialize( Ar, Owner, INDEX_NONE, false );
+ }
+ 
+ FArchive& operator<<(FArchive& Ar, FLightMap*& R)
+@@ -5043,9 +5046,9 @@ FArchive& operator<<(FArchive& Ar, FLightMap*& R)
+ 	return Ar;
+ }
+ 
+-FArchive& operator<<(FArchive& Ar, FLightMapCoefficients& Coefs)
+-{
+-	Ar.Serialize(&Coefs, sizeof(FLightMapCoefficients));
++FArchive& operator<<(FArchive& Ar, FLightMapCoefficients& Coefs) 
++{ 
++	Ar.Serialize(&Coefs, sizeof(FLightMapCoefficients)); 
+ 	return Ar;
+ }
+ 
+@@ -5058,7 +5061,7 @@ void FQuantizedLightmapData::Serialize(FArchive& Ar)
+ 	Ar.Serialize(Scale, sizeof(Scale));
+ 	Ar.Serialize(Add, sizeof(Add));
+ 	Ar << LightGuids;
+-
++	
+ 	Ar << bHasSkyShadowing;
+ }
+ 
+@@ -5117,13 +5120,13 @@ bool FQuantizedLightmapData::HasNonZeroData() const
+ 
+ 			// MagicDawn PRT_LM_LQ Begin, limitcai
+ #if MAGICDAWN_PRT_LM_LQ_ENABLE
+-			for (int32 CoefficentIndex = 0; CoefficentIndex < 2; CoefficentIndex++)
+-			{
+-				if ((LightmapSample.PrtLQCoefficients[CoefficentIndex][0] != 0) || (LightmapSample.PrtLQCoefficients[CoefficentIndex][1] != 0) || (LightmapSample.PrtLQCoefficients[CoefficentIndex][2] != 0))
+-				{
+-					return true;
+-				}
+-			}
++            for (int32 CoefficentIndex = 0; CoefficentIndex < 2; CoefficentIndex++)
++            {
++                if ((LightmapSample.PrtLQCoefficients[CoefficentIndex][0] != 0) || (LightmapSample.PrtLQCoefficients[CoefficentIndex][1] != 0) || (LightmapSample.PrtLQCoefficients[CoefficentIndex][2] != 0))
++                {
++                    return true;
++                }
++            }
+ #endif
+ 			// MagicDawn PRT_LM_LQ End, limitcai
+ 		}
+@@ -5177,7 +5180,7 @@ void FLightmapResourceCluster::SetFeatureLevelAndInitialize(const FStaticFeature
+ {
+ 	check(IsInRenderingThread());
+ 	SetFeatureLevel(InFeatureLevel);
+-	if (IsInitialized() && GIsRHIInitialized)
++	if(IsInitialized() && GIsRHIInitialized)
+ 	{
+ 		TryInitializeUniformBuffer();
+ 	}
+@@ -5190,7 +5193,7 @@ void FLightmapResourceCluster::UpdateUniformBuffer()
+ 	if (UniformBuffer.IsValid())
+ 	{
+ 		check(HasValidFeatureLevel());
+-
++	
+ 		FLightmapResourceClusterShaderParameters Parameters;
+ 		GetLightmapClusterResourceParameters(GetFeatureLevel(), Input, GetUseVirtualTexturing() ? GetAllocatedVT() : nullptr, Parameters);
+ 
+@@ -5216,9 +5219,9 @@ void FLightmapResourceCluster::ConditionalCreateAllocatedVT()
+ {
+ 	check(IsInRenderingThread());
+ 	check(HasValidFeatureLevel());
+-
++	
+ 	const ULightMapVirtualTexture2D* VirtualTexture = Input.LightMapVirtualTextures[AllowHighQualityLightmaps(GetFeatureLevel()) ? 0 : 1];
+-
++	
+ #if WITH_EDITOR
+ 	// Compilation is still pending, this function will be called back once compilation finishes.
+ 	if (VirtualTexture && VirtualTexture->IsCompiling())
+diff --git a/Engine/Source/Runtime/Engine/Private/MapBuildData.cpp b/Engine/Source/Runtime/Engine/Private/MapBuildData.cpp
+index cc3b30b06..9b19eda0e 100644
+--- a/Engine/Source/Runtime/Engine/Private/MapBuildData.cpp
++++ b/Engine/Source/Runtime/Engine/Private/MapBuildData.cpp
+@@ -39,8 +39,8 @@ MapBuildData.cpp
+ #include "WorldPartition/ActorInstanceGuids.h"
+ #include "LevelInstance/LevelInstanceSubsystem.h"
+ 
+-DECLARE_MEMORY_STAT(TEXT("Stationary Light Static Shadowmap"), STAT_StationaryLightBuildData, STATGROUP_MapBuildData);
+-DECLARE_MEMORY_STAT(TEXT("Reflection Captures"), STAT_ReflectionCaptureBuildData, STATGROUP_MapBuildData);
++DECLARE_MEMORY_STAT(TEXT("Stationary Light Static Shadowmap"),STAT_StationaryLightBuildData,STATGROUP_MapBuildData);
++DECLARE_MEMORY_STAT(TEXT("Reflection Captures"),STAT_ReflectionCaptureBuildData,STATGROUP_MapBuildData);
+ 
+ DEFINE_LOG_CATEGORY(LogMapBuildDataRegistry);
+ 
+@@ -110,7 +110,7 @@ void UWorld::PropagateLightingScenarioChange()
+ 	{
+ 		// Use a global context so UpdateAllPrimitiveSceneInfos only runs once, rather than for each component.  Can save minutes of time.
+ 		FGlobalComponentRecreateRenderStateContext Context(WorldComponents);
+-
++		
+ 		for (UActorComponent* Component : WorldComponents)
+ 		{
+ 			((USceneComponent*)Component)->PropagateLightingScenarioChange();
+@@ -131,7 +131,7 @@ UMapBuildDataRegistry* CreateRegistryForLegacyMap(ULevel* Level)
+ 
+ void ULevel::HandleLegacyMapBuildData()
+ {
+-	if (GComponentsWithLegacyLightmaps.GetAnnotationMap().Num() > 0
++	if (GComponentsWithLegacyLightmaps.GetAnnotationMap().Num() > 0 
+ 		|| GLevelsWithLegacyBuildData.GetAnnotationMap().Num() > 0
+ 		|| GLightComponentsWithLegacyBuildData.GetAnnotationMap().Num() > 0)
+ 	{
+@@ -257,8 +257,7 @@ FMeshMapBuildData::FMeshMapBuildData()
+ }
+ 
+ FMeshMapBuildData::~FMeshMapBuildData()
+-{
+-}
++{}
+ 
+ void FMeshMapBuildData::AddReferencedObjects(FReferenceCollector& Collector)
+ {
+@@ -319,7 +318,7 @@ FArchive& operator<<(FArchive& Ar, FReflectionCaptureMapBuildData& ReflectionCap
+ 	Ar << ReflectionCaptureMapBuildData.AverageBrightness;
+ 
+ 	float Brightness = 1.0f;
+-	if (Ar.CustomVer(FRenderingObjectVersion::GUID) >= FRenderingObjectVersion::StoreReflectionCaptureBrightnessForCooking
++	if (Ar.CustomVer(FRenderingObjectVersion::GUID) >= FRenderingObjectVersion::StoreReflectionCaptureBrightnessForCooking 
+ 		&& Ar.CustomVer(FUE5ReleaseStreamObjectVersion::GUID) < FUE5ReleaseStreamObjectVersion::ExcludeBrightnessFromEncodedHDRCubemap)
+ 	{
+ 		Ar << Brightness;
+@@ -561,14 +560,14 @@ void UMapBuildDataRegistry::Serialize(FArchive& Ar)
+ 		{
+ 			Ar << ReflectionCaptureBuildData;
+ 		}
+-
++		
+ 		if (Ar.CustomVer(FRenderingObjectVersion::GUID) >= FRenderingObjectVersion::SkyAtmosphereStaticLightingVersioning)
+ 		{
+ 			Ar << SkyAtmosphereBuildData;
+ 		}
+ 
+ 		if (Ar.CustomVer(FFortniteMainBranchObjectVersion::GUID) >= FFortniteMainBranchObjectVersion::VolumetricLightMapGridDescSupport)
+-		{
++		{			
+ 			bool bHasGrid = VolumetricLightMapGridDesc != nullptr;
+ 			Ar << bHasGrid;
+ 
+@@ -649,11 +648,13 @@ void UMapBuildDataRegistry::PostLoad()
+ 			continue;
+ 
+ #if WITH_EDITORONLY_DATA
+-		int SizeX = LightMapTexture->Source.GetSizeX();
+-		int SizeY = LightMapTexture->Source.GetSizeY();
++		int SizeX = LightMapTexture->Source.GetSizeX()/2;
++		int SizeY = LightMapTexture->Source.GetSizeY() / 4;
++
+ #else
+-		int SizeX = LightMapTexture->GetSizeX();
+-		int SizeY = LightMapTexture->GetSizeY();
++		int SizeX = LightMapTexture->GetSizeX() / 2;
++		int SizeY = LightMapTexture->GetSizeY() / 4;
++
+ #endif
+ 
+ 		FString LightMapTextureName = LightMapTexture->GetName();
+@@ -699,7 +700,7 @@ void UMapBuildDataRegistry::PostLoad()
+ 			FLightMap2D::LoadNeuralLightMapParameters(NeuralLightMapParameters, PotentialTextureName);
+ 			LightMap->GetLightMap2D()->NeuralLightMapParameters = NeuralLightMapParameters;
+ 			ParametersMap.Add(LightMapTextureName, NeuralLightMapParameters);
+-		}
++		} 
+ 	}
+ 	/** HPRC Example End */
+ 	SetupLightmapResourceClusters();
+@@ -836,7 +837,7 @@ void UMapBuildDataRegistry::AddLevelPrecomputedLightVolumeBuildData(const FGuid&
+ 
+ const FPrecomputedLightVolumeData* UMapBuildDataRegistry::GetLevelPrecomputedLightVolumeBuildData(FGuid LevelId) const
+ {
+-	const FPrecomputedLightVolumeData* const* DataPtr = LevelPrecomputedLightVolumeBuildData.Find(LevelId);
++	const FPrecomputedLightVolumeData* const * DataPtr = LevelPrecomputedLightVolumeBuildData.Find(LevelId);
+ 
+ 	if (DataPtr)
+ 	{
+@@ -860,12 +861,12 @@ FPrecomputedLightVolumeData* UMapBuildDataRegistry::GetLevelPrecomputedLightVolu
+ 
+ FPrecomputedVolumetricLightmapData& UMapBuildDataRegistry::AllocateLevelPrecomputedVolumetricLightmapBuildData(const FGuid& LevelId)
+ {
+-	if (VolumetricLightMapGridDesc && VolumetricLightMapGridDesc->GetCell(LevelId))
++	if (VolumetricLightMapGridDesc && VolumetricLightMapGridDesc->GetCell(LevelId) )
+ 	{
+-		FPrecomputedVolumetricLightmapData* DataPtr = VolumetricLightMapGridDesc->GetOrCreatePrecomputedVolumetricLightmapBuildData(LevelId);
+-		return *DataPtr;
++		FPrecomputedVolumetricLightmapData* DataPtr = VolumetricLightMapGridDesc->GetOrCreatePrecomputedVolumetricLightmapBuildData(LevelId);		
++		return *DataPtr;	
+ 	}
+-
++	
+ 	check(LevelId.IsValid());
+ 	MarkPackageDirty();
+ 	return *LevelPrecomputedVolumetricLightmapBuildData.Add(LevelId, new FPrecomputedVolumetricLightmapData());
+@@ -881,11 +882,11 @@ const FPrecomputedVolumetricLightmapData* UMapBuildDataRegistry::GetLevelPrecomp
+ {
+ 	if (VolumetricLightMapGridDesc)
+ 	{
+-		const FPrecomputedVolumetricLightmapData* DataPtr = VolumetricLightMapGridDesc->GetPrecomputedVolumetricLightmapBuildData(LevelId);
++		const FPrecomputedVolumetricLightmapData* DataPtr = VolumetricLightMapGridDesc->GetPrecomputedVolumetricLightmapBuildData(LevelId);		
+ 		return DataPtr;
+ 	}
+ 
+-	const FPrecomputedVolumetricLightmapData* const* DataPtr = LevelPrecomputedVolumetricLightmapBuildData.Find(LevelId);
++	const FPrecomputedVolumetricLightmapData* const * DataPtr = LevelPrecomputedVolumetricLightmapBuildData.Find(LevelId);
+ 
+ 	if (DataPtr)
+ 	{
+@@ -899,8 +900,8 @@ FPrecomputedVolumetricLightmapData* UMapBuildDataRegistry::GetLevelPrecomputedVo
+ {
+ 	if (VolumetricLightMapGridDesc)
+ 	{
+-		FPrecomputedVolumetricLightmapData* DataPtr = VolumetricLightMapGridDesc->GetPrecomputedVolumetricLightmapBuildData(LevelId);
+-
++		FPrecomputedVolumetricLightmapData* DataPtr = VolumetricLightMapGridDesc->GetPrecomputedVolumetricLightmapBuildData(LevelId);		
++		
+ 		if (DataPtr)
+ 		{
+ 			return DataPtr;
+@@ -1064,12 +1065,12 @@ void UMapBuildDataRegistry::InvalidateSurfaceLightmaps(UWorld* World, bool bRecr
+ 			// LightmapResourceClusters needs to be cleared at RT to avoid a flush in GT because the RenderResource in a ResourceCluster needs to be released before the destructor of FLightmapResourceCluster
+ 			ENQUEUE_RENDER_COMMAND(FReleaseLightmapResourceClustersCmd)(
+ 				[LocalLightmapResourceClusters = MoveTemp(LightmapResourceClusters)](FRHICommandListImmediate& RHICmdList) mutable
++			{
++				for (auto& ResourceCluster : LocalLightmapResourceClusters)
+ 				{
+-					for (auto& ResourceCluster : LocalLightmapResourceClusters)
+-					{
+-						ResourceCluster.ReleaseResource();
+-					}
+-				});
++					ResourceCluster.ReleaseResource();
++				}
++			});
+ 
+ 			LightmapResourceClusters.Empty();
+ 		}
+@@ -1124,14 +1125,14 @@ bool UMapBuildDataRegistry::IsLightingValid(ERHIFeatureLevel::Type InFeatureLeve
+ 				const FLightMap2D* Lightmap2D = Data.LightMap->GetLightMap2D();
+ 				if (Lightmap2D)
+ 				{
+-					// MagicDawn PRT_LM End, limitcai
+-					if ((bUsingVTLightmaps && Lightmap2D->IsVirtualTextureValid()) || (!bUsingVTLightmaps && (Lightmap2D->IsValid(0) || Lightmap2D->IsValid(1)
++                    // MagicDawn PRT_LM End, limitcai
++					if ((bUsingVTLightmaps && Lightmap2D->IsVirtualTextureValid()) || (!bUsingVTLightmaps && (Lightmap2D->IsValid(0) || Lightmap2D->IsValid(1) 
+ #if MAGICDAWN_PRT_LM_ENABLE
+-						|| Lightmap2D->IsPrtTextureValid()
++					|| Lightmap2D->IsPrtTextureValid()
+ #endif
+-						)))
+-						// MagicDawn PRT_LM End, limitcai
+-					{
++					)))
++					// MagicDawn PRT_LM End, limitcai
++                    {
+ 						return true;
+ 					}
+ 				}
+@@ -1173,7 +1174,7 @@ FLightmapClusterResourceInput GetClusterInput(const FMeshMapBuildData& MeshBuild
+ 	}
+ 
+ 	FShadowMap2D* ShadowMap2D = MeshBuildData.ShadowMap ? MeshBuildData.ShadowMap->GetShadowMap2D() : nullptr;
+-
++		
+ 	if (ShadowMap2D)
+ 	{
+ 		ClusterInput.ShadowMapTexture = ShadowMap2D->GetTexture();
+@@ -1237,7 +1238,7 @@ void UMapBuildDataRegistry::InitializeClusterRenderingResources(ERHIFeatureLevel
+ 	check(bSetupResourceClusters || MeshBuildData.Num() == 0);
+ 	// If we have any mesh build data, we must have at least one resource cluster, otherwise clusters have not been setup properly.
+ 	check(LightmapResourceClusters.Num() > 0 || MeshBuildData.Num() == 0);
+-
++	
+ 	ENQUEUE_RENDER_COMMAND(SetFeatureLevelAndInitialize)(
+ 		[&LightmapResourceClusters = LightmapResourceClusters, InFeatureLevel](FRHICommandList& RHICmdList)
+ 		{
+@@ -1302,7 +1303,7 @@ void UMapBuildDataRegistry::EmptyLevelData(const TSet<FGuid>* ResourcesToKeep)
+ 
+ 	// keep the VLM grid if we kept the VLM data
+ 	if (!LevelPrecomputedVolumetricLightmapBuildData.Num())
+-	{
++	{	
+ 		delete VolumetricLightMapGridDesc;
+ 		VolumetricLightMapGridDesc = nullptr;
+ 	}
+@@ -1335,7 +1336,7 @@ UMapBuildDataRegistry* UMapBuildDataRegistry::Get(const UActorComponent* Compone
+ 
+ #if WITH_EDITOR
+ void UMapBuildDataRegistry::RedirectToRegistry(TArray<FGuid>& ActorInstances, UMapBuildDataRegistry* Registry)
+-{
++{	
+ 	// In PIE multiple worlds will reuse the same global UMapBuildDataRegistry so we make sure to refcount the add/remove of the redirects
+ 	int32& CurrentRefCount = RedirectedRegistriesRefcount.FindOrAdd(Registry->GetFName());
+ 	if (CurrentRefCount == 0)
+@@ -1346,14 +1347,14 @@ void UMapBuildDataRegistry::RedirectToRegistry(TArray<FGuid>& ActorInstances, UM
+ 			Redirects.Add(ActorInstanceGuid, Registry);
+ 		}
+ 	}
+-
++	
+ 	CurrentRefCount++;
+ }
+ 
+ void UMapBuildDataRegistry::RemoveRedirect(TArray<FGuid>& ActorInstances, UMapBuildDataRegistry* Registry)
+ {
+ 	// In PIE multiple worlds will reuse the same global UMapBuildDataRegistry so we make sure to refcount the add/remove of the redirects
+-	int32& CurrentRefCount = RedirectedRegistriesRefcount.FindChecked(Registry->GetFName());
++	int32& CurrentRefCount = RedirectedRegistriesRefcount.FindChecked(Registry->GetFName());	
+ 	CurrentRefCount--;
+ 
+ 	check(CurrentRefCount >= 0);
+@@ -1377,7 +1378,7 @@ void UMapBuildDataRegistry::RemoveRegistry(UMapBuildDataRegistry* Registry)
+ #endif
+ 
+ UMapBuildDataRegistry* UMapBuildDataRegistry::FindRegistryWorldPartition(const AActor* Actor)
+-{
++{	
+ 	UMapBuildDataRegistry* Registry = nullptr;
+ 
+ 	// Finding the correct registry
+@@ -1400,22 +1401,22 @@ UMapBuildDataRegistry* UMapBuildDataRegistry::FindRegistryWorldPartition(const A
+ 	UPackage* ObjectPackage = Actor->GetPackage();
+ 
+ 	auto GetRegistryFromPackage = [ObjectPackage](const UObject* Object) -> UMapBuildDataRegistry*
++	{
++		UMapBuildDataRegistry* Registry = nullptr;
++		ForEachObjectWithPackage(ObjectPackage, [&Registry](UObject* ObjInPackage) -> bool
+ 		{
+-			UMapBuildDataRegistry* Registry = nullptr;
+-			ForEachObjectWithPackage(ObjectPackage, [&Registry](UObject* ObjInPackage) -> bool
+-				{
+-					Registry = Cast<UMapBuildDataRegistry>(ObjInPackage);
+-					if (Registry)
+-					{
+-						// stop enumeration
+-						return false;
+-					}
++			Registry = Cast<UMapBuildDataRegistry>(ObjInPackage);
++			if (Registry)
++			{
++				// stop enumeration
++				return false;
++			}
+ 
+-					return true;
+-				});
++			return true;
++		});
+ 
+-			return Registry;
+-		};
++		return Registry;
++	};
+ 
+ 
+ 	if (UMapBuildDataRegistry** RegistryPtr = PackagesToMapBuildData.Find(ObjectPackage))
+@@ -1425,10 +1426,10 @@ UMapBuildDataRegistry* UMapBuildDataRegistry::FindRegistryWorldPartition(const A
+ 	else
+ 	{
+ 		Registry = GetRegistryFromPackage(Actor);
+-
++		
+ 		if (!Registry)
+ 		{
+-			Registry = GetRegistryFromPackage(ULevelInstanceSubsystem::GetOwningLevel(Actor->GetLevel(), false));
++			 Registry = GetRegistryFromPackage(ULevelInstanceSubsystem::GetOwningLevel(Actor->GetLevel(), false));
+ 		}
+ 
+ 		check(!PackagesToMapBuildData.Find(ObjectPackage));
+@@ -1442,7 +1443,7 @@ UMapBuildDataRegistry* UMapBuildDataRegistry::FindRegistryWorldPartition(const A
+ UMapBuildDataRegistry* UMapBuildDataRegistry::Get(const AActor* Actor)
+ {
+ 	ULevel* OwnerLevel = Actor->GetLevel();
+-	UWorld* World = OwnerLevel ? OwnerLevel->GetWorld() : nullptr;
++	UWorld* World = OwnerLevel ? OwnerLevel->GetWorld() : nullptr;	
+ 	UMapBuildDataRegistry* Registry = nullptr;
+ 
+ 	if (World && World->IsPartitionedWorld() && World->PersistentLevel->MapBuildData)
+@@ -1466,7 +1467,7 @@ UMapBuildDataRegistry* UMapBuildDataRegistry::Get(ULevel* OwnerLevel, UWorld* Wo
+ 	if (OwnerLevel && World)
+ 	{
+ 		ULevel* ActiveLightingScenario = World->GetActiveLightingScenario();
+-
++		
+ 		if (ActiveLightingScenario && ActiveLightingScenario->MapBuildData)
+ 		{
+ 			MapBuildData = ActiveLightingScenario->MapBuildData;
+@@ -1481,7 +1482,7 @@ UMapBuildDataRegistry* UMapBuildDataRegistry::Get(ULevel* OwnerLevel, UWorld* Wo
+ }
+ 
+ void UMapBuildDataRegistry::SetVolumetricLightMapGridDesc(FVolumetricLightMapGridDesc* GridDesc)
+-{
++{	 
+ 	delete VolumetricLightMapGridDesc;
+ 	VolumetricLightMapGridDesc = GridDesc;
+ }
+-- 
+2.50.1.windows.1
+
