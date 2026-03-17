@@ -1,32 +1,33 @@
-高性能AI渲染大赛 - 光照贴图神经网络重建与UE渲染管线集成方案
-项目概述
-本项目为高性能AI渲染大赛参赛方案，针对光照贴图神经网络时序重建与UE渲染管线工程化集成两个赛题，设计了一套兼顾重建精度、压缩效率与实时推理帧率的轻量级AI渲染方案。
+光照贴图神经网络重建与UE渲染管线集成方案
+概述
+本项目为光照贴图神经网络时序重建与UE渲染管线工程化集成，设计了一套兼顾重建精度、压缩效率与实时推理帧率的轻量级AI渲染方案。
 核心基于极小参数量的MLP网络实现光照信息压缩与解码，通过针对性的训练策略、数据编码优化与UE Shader工程适配，最终实现了动态光照贴图的高质量实时重建，满足离线训练精度与在线渲染性能的双重要求。
 ---
 目录
-1.赛题核心目标
-赛题一：光照贴图神经网络重建方案
-赛题二：UE渲染管线集成方案
+1.核心目标
+问题一：光照贴图神经网络重建方案
+问题二：UE渲染管线集成方案
 性能测试指标
 工程文件说明
 部署与复现步骤
 注意事项
 ---
-赛题核心目标
-赛题一：光照贴图神经网络重建
+核心目标
+问题一：光照贴图神经网络重建
 基于神经网络实现动态光照贴图的压缩与时序重建，核心目标为：
 设计可高效存储光照时序信息的FeatureMap，实现高压缩比
 训练神经网络实现从压缩特征到任意时间步光照图像的高精度重建
 平衡重建质量、压缩率与推理速度，实现三者综合性能最优
-赛题二：UE渲染管线集成
-将赛题一的AI重建算法集成到Unreal Engine渲染管线中，核心目标为：
+问题二：UE渲染管线集成
+将AI重建算法集成到Unreal Engine渲染管线中，核心目标为：
 最小化引擎原生代码修改，保证管线兼容性
 基于UE Shader实现神经网络实时推理，保障高渲染帧率
 验证算法在实际渲染管线中的落地效果，实现动态光照的实时渲染
 ---
-赛题一：光照贴图神经网络重建方案
+问题一：光照贴图神经网络重建方案
+本算法经过了10轮以上的迭代，面向轻量级MLP网络方案感觉已经迭代到极致，想要有更好的效果可能得从其他角度进行入手，比如基于机器学习的方案等
 1. 核心网络架构
-为兼顾推理速度与重建精度，采用轻量级MLP网络架构，整体结构为8->16->16->16->3，激活函数选用GeLU，有效平衡模型表达能力与计算开销，适配后续UE Shader实时推理需求。
+为兼顾推理速度与重建精度，采用轻量级MLP网络架构，整体结构为8->16->16->16->3，网络架构可以针对不同的光照贴图格式和重建质量、压缩率与推理速度比值进行定制，总体来说网络大了重建质量会提升，然后推理速度会下降。激活函数选用GeLU，有效平衡模型表达能力与计算开销，适配后续UE Shader实时推理需求。
 ```python
 class MLPStack(nn.Module):
     """MLP 堆栈，实现光照特征解码"""
@@ -97,12 +98,13 @@ featuremap_array_f32.astype(np.float16).tofile(output_featuremap_f16_filename)
 output_mlp_filename = f"./Parameters/model_{lightmap['level']}_{id}_mlp_f32.bin"
 mlp_final_array_f32.tofile(output_mlp_filename)
 ```
-6. 进阶训练阶段（阶段二）
-在基础训练（阶段一）完成后，引入混合专家架构，进一步提升时序重建精度：
-阶段一核心：训练出优质FeatureMap，存储光照时序信息，并得到一个基础MLP网络用于通用推理；
+6. 进阶训练阶段（阶段二可选）
+在基础训练（阶段一）完成后，已经可以获得一个比较好的结果了，引入混合专家架构，可以进一步提升时序重建精度：
+阶段一核心：训练出优质FeatureMap，存储光照时序信息，并得到一个基础优秀MLP网络用于通用推理；
 阶段二核心：固定阶段一训练得到的FeatureMap，针对不同时间段训练多个MLP（每个MLP作为对应时间段的“专家”），通过时间信息将数据分配给对应MLP解码；
 优势：模型参数量可控（26个专家总参数量约20MB），推理速度仅增加一个IF ELSE判断开销，大幅提升不同时间段的重建精度。
 阶段二采用与阶段一相同的8->16->16->16->3模型架构，仅训练MLP权重和偏置，固定FeatureMap参数。
+混合专家架构的训练优化对结果影响很大，
 ---
 赛题二：UE渲染管线集成方案
 核心原则：最小化UE引擎原生代码修改，基于官方管线集成方法，将赛题一的AI重建算法集成到UE渲染管线中，重点优化Shader推理代码，保障实时渲染帧率。
@@ -146,86 +148,10 @@ Output4 = pow(Output4, inv_gamma);
 ```
 2.3 半精度推理优化
 将数据读取和模型推理均改为HALF半精度（half4），尝试进一步提升帧率，实测引擎可能已自动将FLOAT优化为HALF，因此帧率提升不明显，但未影响重建精度。
-3. 完整Shader推理代码
-以下代码可直接复制粘贴到LightmapCommon.ush的光照渲染位置，实现算法复现：
-```hlsl
-half4 feature= half4(Texture2DSample( LightmapResourceCluster.NeuralLightMapTexture,
-LightmapResourceCluster.NeuralLightMapSampler,LightmapUV0));
-half4 NeuralLightMapParameters[1024] =
-GetLightmapData(LightmapDataIndex).NeuralLightMapParameters;
-half mu=NeuralLightMapParameters[1023].x;
-half inv_gamma = 1.0 / mu;
-half time_coord = View.TodCurrentTime / 24.0h;
-// 3. 构造模型完整输入(总维度=3(input)+4(feature)+1(时间编码)=8)
-half4 Output0[2];
-Output0[0]=half4(LightmapUV0.y*2.0,LightmapUV0.x, time_coord, feature.r);
-Output0[1]=half4(feature.g,feature.b, feature.a, exp(time_coord) - 1.0h);
-
-half4 Output1[4] ; // 第一层隐藏层(16维)
-#pragma unroll // 展开外层循环,消除循环开销
-for (int i = 0; i < 4; i++)
-    Output1[i] = half4(0.0h, 0.0h, 0.0h, 0.0h);
-#pragma unroll // 展开外层循环,消除循环开销
-for (int j = 0; j < 2; j++)
-    int BaseIndex = (i * 2 + j) * 4;
-    half4x4 WeightMatrix=half4x4(
-        WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0],
-        WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1],
-        WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2],
-        WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
-    Output1[i] += mul(WeightMatrix, Output0[j]);
-Output1[i] += NeuralLightMapParameters[176 + i];
-Output1[i] = (Output1[i] / (1.0h + exp(-1.702h * Output1[i])));
-
-half4 Output2[4] ;
-#pragma unroll // 展开外层循环,消除循环开销
-for (int i = 0; i < 4; i++)
-    Output2[i] = half4(0.0h, 0.0h, 0.0h, 0.0h);
-#pragma unroll // 展开外层循环,消除循环开销
-for (int j = 0; j < 4; j++)
-    int BaseIndex = (8+i * 4 + j) * 4;
-    half4x4 WeightMatrix=half4x4(
-        WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0],
-        WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1],
-        WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2],
-        WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
-    Output2[i] += mul(WeightMatrix, Output1[j]);
-Output2[i] += NeuralLightMapParameters[180 + i];
-Output2[i] = (Output2[i] / (1.0h + exp(-1.702h * Output2[i])));
-
-#pragma unroll // 展开外层循环,消除循环开销
-for (int i = 0; i <4; i++)
-    Output1[i] = half4(0.0h, 0.0h, 0.0h, 0.0h);
-#pragma unroll // 展开外层循环,消除循环开销
-for (int j = 0; j < 4; j++)
-    int BaseIndex = (24+i * 4 + j) * 4;
-    half4x4 WeightMatrix=half4x4(
-        WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0],
-        WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1],
-        WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2],
-        WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
-    Output1[i] += mul(WeightMatrix, Output2[j]);
-Output1[i] += NeuralLightMapParameters[184 + i];
-Output1[i] = (Output1[i] / (1.0h + exp(-1.702h * Output1[i])));
-
-half3 Output4 = half3(0.0h, 0.0h, 0.0h);
-#pragma unroll
-for (int j = 0; j < 4; j++)
-    int BaseIndex = (40 + j) * 4;
-    half4x4 WeightMatrix=half4x4(
-        WeightMatrix[0] = NeuralLightMapParameters[BaseIndex + 0],
-        WeightMatrix[1] = NeuralLightMapParameters[BaseIndex + 1],
-        WeightMatrix[2] = NeuralLightMapParameters[BaseIndex + 2],
-        WeightMatrix[3] = NeuralLightMapParameters[BaseIndex + 3]);
-    Output4.xyz += mul(WeightMatrix, Output1[j]).xyz;
-Output4 += NeuralLightMapParameters[188].xyz;
-Output4 = max(half3(0.0h, 0.0h, 0.0h), Output4);
-Output4 = pow(Output4, inv_gamma);
-OutDiffuseLighting = Output4 * Directionality;
 ```
 ---
 性能测试指标
-模型综合性能呈凸型函数分布，通过调整超参数可实现重建质量、压缩效率与推理速度的最优平衡，核心测试指标如下（本地4090 GPU环境）：
+模型综合性能呈凸型函数分布，通过调整超参数可实现重建质量、压缩效率与推理速度的最优平衡，（在数据集保证足够复杂的情况下）核心测试指标如下（本地4090 GPU环境）：
 ```json
 {
     "PSNR Score": 68.40884319641688,
@@ -236,21 +162,6 @@ OutDiffuseLighting = Output4 * Directionality;
     "综合得分": 47.115683940361814
 }
 ```
-关键说明：
-4090 GPU+PyTorch环境下，16维隐藏层与64维隐藏层的推理速度差异不明显；
-UE渲染管线（4060 GPU，Shader推理）中，16维隐藏层与64维隐藏层的帧率相差20倍，因此UE Shader推理时，隐藏层维度需限制在16以下（除非通过CUDA和TENSOR CORE优化）。
----
-工程文件说明
-1. 模型参数文件
-存储路径：./Parameters/
-model_{level}_{id}_featuremap_f32.bin：FeatureMap FP32格式文件
-model_{level}_{id}_featuremap_f16.bin：FeatureMap FP16格式文件（推理首选）
-model_{level}_{id}_mlp_f32.bin：MLP权重FP32格式文件
-2. 辅助脚本
-MLPTrans.py：MLP权重重排脚本，训练完成后运行，将权重和偏置重排为UE Shader可读取的格式。
-3. Shader文件
-LightmapCommon.ush：修改后的UE光照渲染Shader文件，包含完整MLP推理代码，替换引擎对应文件即可使用。
----
 部署与复现步骤
 1. 环境准备
 离线训练环境：PyTorch、CUDA（建议11.7+）、GPU（建议4090及以上，用于快速训练）；
@@ -261,13 +172,12 @@ UE渲染环境：Unreal Engine（版本兼容即可）、4060及以上GPU（用�
 将生成的FeatureMap（FP16）和MLP权重文件放入./Parameters/目录。
 3. UE管线集成
 修改UE引擎文件：MapBuildData.cpp、LightMap.cpp，按上述代码调整参数；
-替换LightmapCommon.ush文件，粘贴完整Shader推理代码；
+修改LightmapCommon.ush文件
 启动UE项目，加载光照贴图资源，验证实时渲染效果。
 ---
 注意事项
-模型超参数调整：GAMMA超参数需通过快速搜索确定，避免直接使用默认值导致重建精度下降；
 权重重排：MLP训练完成后必须运行MLPTrans脚本，否则UE Shader无法正确读取权重，导致推理失败；
-精度选择：FeatureMap推理时优先使用FP16格式，避免使用FP8格式，防止重建质量急剧下降；
-UE帧率优化：UE Shader推理时，MLP隐藏层维度需限制在16以下，否则帧率会大幅降低；
+精度选择：FeatureMap推理时优先使用FP16格式；
+UE帧率优化：UE Shader推理时，MLP隐藏层维度建议限制在16以下，否则帧率会大幅降低；
 环境兼容：确保UE引擎版本与Shader代码兼容，避免因版本差异导致的编译错误。
-> （注：文档部分内容可能由 AI 生成）
+> （注：部分文档内容可能由 AI 生成）
